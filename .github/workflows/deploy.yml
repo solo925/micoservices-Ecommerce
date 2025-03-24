@@ -1,0 +1,29 @@
+name: Deploy Microservices
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'k8s/**'
+      - '**/Dockerfile'
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Build Docker Images
+      run: |
+        docker build -t products-service:latest ./products
+        docker build -t orders-service:latest ./orders
+        docker build -t payments-service:latest ./payments
+
+  deploy-staging:
+    needs: [build-push]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Deploy to Staging
+      run: |
+        kubectl apply -f k8s/ -n staging
+        kubectl rollout restart deployment -n staging

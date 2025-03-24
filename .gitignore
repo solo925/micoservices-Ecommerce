@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+venv/
+env/
+
+# Docker/Kubernetes
+**/docker-compose.yml
+**/.dockerignore
+**/node_modules/
+**/npm-debug.log
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+*.dump
+
+# Environment files
+.env
+.venv
+.env.local
+secrets/**
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local development
+tmp/
+temp/
+dist/
+build/
+.coverage
+htmlcov/
+
+# Kubernetes generated files
+**/*.yaml.bak
+**/*.generated.yaml

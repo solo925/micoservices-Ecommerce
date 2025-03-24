@@ -1,0 +1,6 @@
+version: v1.22.0
+exclude:
+  open_source:
+    - 'tests/*'
+    - 'migrations/*'
+patch: {}

@@ -1,0 +1,19 @@
+name: Auto Rollback
+on:
+  workflow_run:
+    workflows: ["Deploy Microservices"]
+    types:
+      - completed
+
+jobs:
+  check-rollback:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check deployment status
+      uses: mxschmitt/action-kubectl@v1
+      with:
+        command: rollout status deployment/products-service -n staging --timeout=300s
+    - name: Rollback if failed
+      if: ${{ failure() }}
+      run: |
+        kubectl rollout undo deployment/products-service -n staging

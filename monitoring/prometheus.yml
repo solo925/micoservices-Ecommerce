@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'django-services'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['products-service:8000', 'orders-service:8000']

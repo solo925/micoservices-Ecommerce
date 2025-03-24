@@ -1,0 +1,15 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: geo-distribution
+spec:
+  host: products-service
+  trafficPolicy:
+    loadBalancer:
+      localityLbSetting:
+        enabled: true
+        distribute:
+        - from: region/us-east/*
+          to:
+            "region/us-east/*": 70
+            "region/eu-west/*": 30
