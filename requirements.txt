@@ -1,14 +1,14 @@
 # Core
-Django==4.2
-djangorestframework==3.14.0
+Django==4.2.10
+djangorestframework==3.15.1
 django-filter==23.2
 
 # Async Processing
-celery==5.3.0
-redis==4.5.5
+celery==5.3.6
+redis==5.0.1
 
 # Database
-psycopg2-binary==2.9.6
+psycopg2-binary==2.9.9
 django-redis==5.2.0
 
 # Monitoring
@@ -20,7 +20,7 @@ graphene-django==3.1.5
 requests==2.31.0
 
 # Real-time
-channels==4.0.0
+channels==4.1.0
 channels-redis==4.1.0
 
 # Security
@@ -29,7 +29,9 @@ python-keycloak==2.15.0
 
 # Testing
 locust==2.15.1
-pytest==7.4.0
+pytest==8.0.2
+pytest-django==4.8.0
+coverage==7.4.1
 
 # Dev Tools
 ipython==8.12.2
