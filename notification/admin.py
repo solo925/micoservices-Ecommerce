@@ -69,7 +69,6 @@ class NotificationChannelAdmin(admin.ModelAdmin):
     rate_limit_display.short_description = 'Rate Limits'
 
 
-@admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
     list_display = ('notification_type', 'recipient_display', 'channel', 'priority', 'status_display', 'created_at')
     list_filter = ('notification_type', 'channel', 'priority', 'is_sent', 'delivery_status', 'created_at')
@@ -199,7 +198,6 @@ class NotificationLogAdmin(admin.ModelAdmin):
     message_short.short_description = 'Message'
 
 
-@admin.register(NotificationBatch)
 class NotificationBatchAdmin(admin.ModelAdmin):
     list_display = ('name', 'template', 'channel', 'status', 'progress_display', 'created_at')
     list_filter = ('status', 'template', 'channel', 'created_at')

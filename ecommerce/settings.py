@@ -25,7 +25,8 @@ INSTALLED_APPS = [
     'orders',
     'payments',
     'gateway',
-    'notification'
+    'notification',
+    'audit'
 ]
 
 MIDDLEWARE = [
@@ -35,12 +36,29 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware'
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'audit.signals.AuditMiddleware'
 ]
 
 ROOT_URLCONF = 'ecommerce.urls'
 WSGI_APPLICATION = 'ecommerce.wsgi.application'
 ASGI_APPLICATION = 'ecommerce.asgi.application'
+
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
 
 DATABASES = {
     'default': {

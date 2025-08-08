@@ -350,7 +350,7 @@ class CartItemCreateView(generics.CreateAPIView):
         return context
 
 
-class CartItemUpdateView(generics.UpdateDestroyAPIView):
+class CartItemUpdateView(generics.RetrieveUpdateDestroyAPIView):
     """Update or remove cart item"""
     serializer_class = CartItemUpdateSerializer
     permission_classes = [permissions.IsAuthenticated]
