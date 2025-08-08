@@ -18,8 +18,10 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'channels',
     'django_prometheus',
+    'django_filters',
     'authentication',
     'products',
+    'inventory',
     'orders',
     'payments',
     'gateway'
