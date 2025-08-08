@@ -249,7 +249,6 @@ class CartItemAdmin(admin.ModelAdmin):
 
 
 # Custom admin actions
-@admin.register(Order)
 class OrderAdminWithActions(OrderAdmin):
     actions = ['mark_as_confirmed', 'mark_as_shipped', 'mark_as_delivered', 'mark_as_cancelled']
     
@@ -272,3 +271,7 @@ class OrderAdminWithActions(OrderAdmin):
         updated = queryset.update(status='cancelled', cancelled_at=timezone.now())
         self.message_user(request, f'{updated} orders marked as cancelled.')
     mark_as_cancelled.short_description = "Mark selected orders as cancelled"
+
+# Re-register Order with actions
+admin.site.unregister(Order)
+admin.site.register(Order, OrderAdminWithActions)

@@ -258,7 +258,6 @@ class PaymentDisputeAdmin(admin.ModelAdmin):
 
 
 # Custom admin actions
-@admin.register(Payment)
 class PaymentAdminWithActions(PaymentAdmin):
     actions = ['mark_as_succeeded', 'mark_as_failed', 'mark_as_refunded']
     
@@ -278,7 +277,6 @@ class PaymentAdminWithActions(PaymentAdmin):
     mark_as_refunded.short_description = "Mark selected payments as refunded"
 
 
-@admin.register(Refund)
 class RefundAdminWithActions(RefundAdmin):
     actions = ['mark_as_succeeded', 'mark_as_failed']
     
@@ -293,7 +291,6 @@ class RefundAdminWithActions(RefundAdmin):
     mark_as_failed.short_description = "Mark selected refunds as failed"
 
 
-@admin.register(Subscription)
 class SubscriptionAdminWithActions(SubscriptionAdmin):
     actions = ['cancel_subscriptions']
     
@@ -301,3 +298,13 @@ class SubscriptionAdminWithActions(SubscriptionAdmin):
         updated = queryset.update(status='canceled', canceled_at=timezone.now())
         self.message_user(request, f'{updated} subscriptions cancelled.')
     cancel_subscriptions.short_description = "Cancel selected subscriptions"
+
+# Re-register models with actions
+admin.site.unregister(Payment)
+admin.site.register(Payment, PaymentAdminWithActions)
+
+admin.site.unregister(Refund)
+admin.site.register(Refund, RefundAdminWithActions)
+
+admin.site.unregister(Subscription)
+admin.site.register(Subscription, SubscriptionAdminWithActions)
