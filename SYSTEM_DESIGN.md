@@ -43,6 +43,8 @@ graph TB
         PAYMENTS[Payments Service]
         NOTIFICATIONS[Notification Service]
         AUDIT[Audit Service]
+        EVENTS[Event Service]
+        SERVICE_DISCOVERY[Service Discovery]
         USER[User Management]
     end
     
@@ -73,6 +75,7 @@ graph TB
     API_GW --> PRODUCTS
     API_GW --> ORDERS
     API_GW --> PAYMENTS
+    API_GW --> SERVICE_DISCOVERY
     
     AUTH --> REDIS
     PRODUCTS --> POSTGRES
@@ -400,6 +403,251 @@ CREATE TABLE refunds (
 - Elasticsearch for log storage
 - Kibana for visualization
 - Redis for real-time processing
+
+#### 9. Service Discovery & Configuration Management
+**Purpose**: Centralized service registration, health monitoring, and configuration management
+
+**Responsibilities**:
+- Service registration and discovery
+- Health check monitoring
+- Configuration management
+- Service dependency tracking
+- Performance metrics collection
+- Service lifecycle management
+
+**Technology Stack**:
+- Django + DRF
+- PostgreSQL for service registry
+- Redis for caching and pub/sub
+- Requests for health checks
+- Celery for background tasks
+
+**Key Features**:
+
+**Service Registry**:
+```python
+# Service Registration
+class ServiceRegistry:
+    service_name: str
+    service_type: str  # 'api', 'worker', 'gateway', etc.
+    version: str
+    base_url: str
+    health_check_url: str
+    status: str  # 'active', 'inactive', 'maintenance'
+    capabilities: dict
+    environment: str
+    last_heartbeat: datetime
+```
+
+**Service Instances**:
+```python
+# Service Instance Management
+class ServiceInstance:
+    service: ServiceRegistry
+    instance_id: str
+    host: str
+    port: int
+    protocol: str
+    status: str  # 'healthy', 'unhealthy', 'starting'
+    is_primary: bool
+    load_balancer_weight: int
+    metadata: dict
+```
+
+**Health Checks**:
+```python
+# Health Check System
+class HealthCheck:
+    service_instance: ServiceInstance
+    status: str  # 'success', 'failure', 'timeout'
+    response_time_ms: int
+    response_code: int
+    error_message: str
+    checked_at: datetime
+```
+
+**Configuration Management**:
+```python
+# Configuration System
+class Configuration:
+    key: str
+    value: str
+    config_type: str  # 'application', 'database', 'security'
+    service_name: str  # Empty for global config
+    environment: str
+    is_sensitive: bool
+    is_encrypted: bool
+    version: int
+    expires_at: datetime
+```
+
+**API Endpoints**:
+```
+# Service Registration
+POST /api/service-discovery/register/
+{
+    "service_name": "products-service",
+    "service_type": "api",
+    "version": "1.0.0",
+    "base_url": "http://products-service:8000",
+    "health_check_url": "/health/",
+    "instance_id": "products-1",
+    "host": "products-service",
+    "port": 8000
+}
+
+# Service Heartbeat
+POST /api/service-discovery/heartbeat/
+{
+    "service_name": "products-service",
+    "instance_id": "products-1",
+    "status": "healthy",
+    "metadata": {"cpu_usage": 45.2, "memory_usage": 67.8}
+}
+
+# Configuration Management
+GET /api/service-discovery/configurations/get/?key=database_url&service_name=products
+POST /api/service-discovery/configurations/set/
+{
+    "key": "database_url",
+    "value": "postgresql://user:pass@host:5432/db",
+    "service_name": "products",
+    "environment": "production",
+    "is_sensitive": true
+}
+
+# Health Summary
+GET /api/service-discovery/health-summary/
+GET /api/service-discovery/stats/
+```
+
+**Database Schema**:
+```sql
+-- Service Registry
+CREATE TABLE service_registry (
+    id UUID PRIMARY KEY,
+    service_name VARCHAR(100) UNIQUE NOT NULL,
+    service_type VARCHAR(20) DEFAULT 'api',
+    version VARCHAR(20) DEFAULT '1.0.0',
+    description TEXT,
+    base_url VARCHAR(255) NOT NULL,
+    health_check_url VARCHAR(255) NOT NULL,
+    api_docs_url VARCHAR(255),
+    status VARCHAR(20) DEFAULT 'active',
+    is_public BOOLEAN DEFAULT true,
+    is_secure BOOLEAN DEFAULT true,
+    capabilities JSONB DEFAULT '{}',
+    service_dependencies JSONB DEFAULT '[]',
+    config JSONB DEFAULT '{}',
+    environment VARCHAR(50) DEFAULT 'production',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    last_heartbeat TIMESTAMP
+);
+
+-- Service Instances
+CREATE TABLE service_instances (
+    id UUID PRIMARY KEY,
+    service_id UUID REFERENCES service_registry(id),
+    instance_id VARCHAR(100) UNIQUE NOT NULL,
+    host VARCHAR(255) NOT NULL,
+    port INTEGER NOT NULL,
+    protocol VARCHAR(10) DEFAULT 'http',
+    status VARCHAR(20) DEFAULT 'starting',
+    is_primary BOOLEAN DEFAULT false,
+    last_health_check TIMESTAMP,
+    health_check_interval INTEGER DEFAULT 30,
+    health_check_timeout INTEGER DEFAULT 5,
+    metadata JSONB DEFAULT '{}',
+    load_balancer_weight INTEGER DEFAULT 100,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    last_heartbeat TIMESTAMP
+);
+
+-- Health Checks
+CREATE TABLE health_checks (
+    id UUID PRIMARY KEY,
+    service_instance_id UUID REFERENCES service_instances(id),
+    status VARCHAR(20) NOT NULL,
+    response_time_ms INTEGER NOT NULL,
+    response_code INTEGER,
+    error_message TEXT,
+    response_body TEXT,
+    metadata JSONB DEFAULT '{}',
+    checked_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Configurations
+CREATE TABLE configurations (
+    id UUID PRIMARY KEY,
+    key VARCHAR(255) UNIQUE NOT NULL,
+    value TEXT NOT NULL,
+    config_type VARCHAR(20) DEFAULT 'application',
+    service_name VARCHAR(100),
+    environment VARCHAR(20) DEFAULT 'production',
+    description TEXT,
+    is_sensitive BOOLEAN DEFAULT false,
+    is_encrypted BOOLEAN DEFAULT false,
+    version INTEGER DEFAULT 1,
+    previous_value TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    expires_at TIMESTAMP
+);
+
+-- Configuration History
+CREATE TABLE configuration_history (
+    id UUID PRIMARY KEY,
+    configuration_id UUID REFERENCES configurations(id),
+    change_type VARCHAR(20) NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    changed_by VARCHAR(100),
+    change_reason TEXT,
+    metadata JSONB DEFAULT '{}',
+    changed_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Service Dependencies
+CREATE TABLE service_dependencies (
+    id UUID PRIMARY KEY,
+    source_service_id UUID REFERENCES service_registry(id),
+    target_service_id UUID REFERENCES service_registry(id),
+    dependency_type VARCHAR(20) DEFAULT 'required',
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(source_service_id, target_service_id)
+);
+
+-- Service Metrics
+CREATE TABLE service_metrics (
+    id UUID PRIMARY KEY,
+    service_instance_id UUID REFERENCES service_instances(id),
+    cpu_usage FLOAT,
+    memory_usage FLOAT,
+    disk_usage FLOAT,
+    network_io FLOAT,
+    request_count INTEGER DEFAULT 0,
+    error_count INTEGER DEFAULT 0,
+    response_time_avg FLOAT,
+    response_time_p95 FLOAT,
+    response_time_p99 FLOAT,
+    custom_metrics JSONB DEFAULT '{}',
+    recorded_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**Key Benefits**:
+- **Dynamic Service Discovery**: Services automatically register and discover each other
+- **Health Monitoring**: Real-time health checks with configurable intervals
+- **Configuration Management**: Centralized, versioned configuration with environment support
+- **Dependency Tracking**: Visualize and manage service dependencies
+- **Performance Monitoring**: Collect and analyze service metrics
+- **Service Lifecycle**: Manage service states (active, maintenance, deprecated)
 
 ## 💾 Data Architecture
 

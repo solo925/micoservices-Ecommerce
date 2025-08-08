@@ -43,7 +43,7 @@ class ServiceRegistry(models.Model):
     
     # Service capabilities
     capabilities = models.JSONField(default=dict, encoder=DjangoJSONEncoder)
-    dependencies = models.JSONField(default=list, encoder=DjangoJSONEncoder)
+    service_dependencies = models.JSONField(default=list, encoder=DjangoJSONEncoder)
     
     # Service configuration
     config = models.JSONField(default=dict, encoder=DjangoJSONEncoder)
@@ -248,8 +248,8 @@ class ServiceDependency(models.Model):
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    source_service = models.ForeignKey(ServiceRegistry, on_delete=models.CASCADE, related_name='dependencies')
-    target_service = models.ForeignKey(ServiceRegistry, on_delete=models.CASCADE, related_name='dependents')
+    source_service = models.ForeignKey(ServiceRegistry, on_delete=models.CASCADE, related_name='outgoing_dependencies')
+    target_service = models.ForeignKey(ServiceRegistry, on_delete=models.CASCADE, related_name='incoming_dependencies')
     
     # Dependency details
     dependency_type = models.CharField(max_length=20, choices=DEPENDENCY_TYPE_CHOICES, default='required')

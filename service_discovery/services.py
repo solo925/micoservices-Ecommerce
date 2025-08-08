@@ -33,7 +33,7 @@ class ServiceRegistryService:
                     'health_check_url': service_data['health_check_url'],
                     'api_docs_url': service_data.get('api_docs_url', ''),
                     'capabilities': service_data.get('capabilities', {}),
-                    'dependencies': service_data.get('dependencies', []),
+                    'service_dependencies': service_data.get('dependencies', []),
                     'config': service_data.get('config', {}),
                     'environment': service_data.get('environment', 'production'),
                 }

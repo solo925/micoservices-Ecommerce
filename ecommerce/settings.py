@@ -27,7 +27,8 @@ INSTALLED_APPS = [
     'gateway',
     'notification',
     'audit',
-    'events'
+    'events',
+    'service_discovery'
 ]
 
 MIDDLEWARE = [
