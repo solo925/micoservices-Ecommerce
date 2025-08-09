@@ -1,0 +1,166 @@
+groups:
+  - name: microservices_alerts
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: rate(django_http_responses_total{status=~"5.."}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Service {{ $labels.job }} has error rate above 10% for more than 5 minutes"
+
+      # High response time
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(django_http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time detected"
+          description: "Service {{ $labels.job }} 95th percentile response time is above 1 second"
+
+      # Service down
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service is down"
+          description: "Service {{ $labels.job }} instance {{ $labels.instance }} is down"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is above 80% for more than 5 minutes on {{ $labels.instance }}"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is above 90% for more than 5 minutes on {{ $labels.instance }}"
+
+      # Circuit breaker open
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state{state="open"} == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker is open"
+          description: "Circuit breaker for {{ $labels.service }} is in open state"
+
+      # Database connection pool exhausted
+      - alert: DatabaseConnectionPoolExhausted
+        expr: django_db_connections_used / django_db_connections_max > 0.9
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Database connection pool usage is above 90%"
+
+      # Queue length too high
+      - alert: HighQueueLength
+        expr: celery_queue_length > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queue length is too high"
+          description: "Queue {{ $labels.queue }} has more than 1000 pending tasks"
+
+      # Disk space low
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk space is low"
+          description: "Disk space is below 10% on {{ $labels.instance }} mount {{ $labels.mountpoint }}"
+
+  - name: business_metrics_alerts
+    rules:
+      # High order failure rate
+      - alert: HighOrderFailureRate
+        expr: rate(orders_failed_total[5m]) / rate(orders_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High order failure rate"
+          description: "Order failure rate is above 5% for more than 5 minutes"
+
+      # High payment failure rate
+      - alert: HighPaymentFailureRate
+        expr: rate(payments_failed_total[5m]) / rate(payments_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High payment failure rate"
+          description: "Payment failure rate is above 10% for more than 5 minutes"
+
+      # Low inventory alert
+      - alert: LowInventory
+        expr: inventory_items_quantity < 10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low inventory detected"
+          description: "Product {{ $labels.product_id }} has low inventory ({{ $value }} items)"
+
+      # No orders in last hour
+      - alert: NoOrdersInLastHour
+        expr: increase(orders_total[1h]) == 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "No orders in the last hour"
+          description: "No orders have been placed in the last hour"
+
+  - name: infrastructure_alerts
+    rules:
+      # Redis down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis instance {{ $labels.instance }} is down"
+
+      # PostgreSQL down
+      - alert: PostgreSQLDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL instance {{ $labels.instance }} is down"
+
+      # Elasticsearch cluster health
+      - alert: ElasticsearchClusterRed
+        expr: elasticsearch_cluster_health_status{color="red"} == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Elasticsearch cluster is red"
+          description: "Elasticsearch cluster health is red"

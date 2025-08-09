@@ -1,0 +1,106 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'ecommerce-microservices'
+    environment: 'production'
+
+rule_files:
+  - "/etc/prometheus/alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node Exporter - System metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node_exporter:9100']
+
+  # cAdvisor - Container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis_exporter:9121']
+
+  # PostgreSQL metrics
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres_exporter:9187']
+
+  # Django applications with django-prometheus
+  - job_name: 'django-apps'
+    static_configs:
+      - targets: 
+        - 'host.docker.internal:8000'  # Main app
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # API Gateway metrics
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: '/api/gateway/metrics'
+    scrape_interval: 15s
+
+  # Service Discovery metrics
+  - job_name: 'service-discovery'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: '/api/service-discovery/metrics'
+    scrape_interval: 30s
+
+  # Microservices health checks
+  - job_name: 'microservices-health'
+    static_configs:
+      - targets:
+        - 'host.docker.internal:8000'  # Products
+        - 'host.docker.internal:8001'  # Orders  
+        - 'host.docker.internal:8002'  # Payments
+        - 'host.docker.internal:8003'  # Inventory
+        - 'host.docker.internal:8004'  # Notifications
+        - 'host.docker.internal:8005'  # Authentication
+    metrics_path: '/health'
+    scrape_interval: 10s
+
+  # Application Performance Monitoring
+  - job_name: 'django-metrics'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: '/prometheus/metrics'
+    scrape_interval: 30s
+
+  # Custom business metrics
+  - job_name: 'business-metrics'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: '/api/metrics/business'
+    scrape_interval: 60s
+
+  # Jaeger metrics
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger:14269']
+
+  # Elasticsearch metrics
+  - job_name: 'elasticsearch'
+    static_configs:
+      - targets: ['elasticsearch:9200']
+    metrics_path: '/_prometheus/metrics'
+
+  # Alertmanager metrics
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']

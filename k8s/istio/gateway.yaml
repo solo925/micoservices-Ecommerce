@@ -1,0 +1,42 @@
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: ecommerce-gateway
+  namespace: ecommerce
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  # HTTP
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - ecommerce.local
+    - "*"
+    tls:
+      httpsRedirect: true
+  # HTTPS
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: ecommerce-tls
+    hosts:
+    - ecommerce.local
+    - "*"
+---
+# TLS Certificate (for production, use cert-manager)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ecommerce-tls
+  namespace: istio-system
+type: kubernetes.io/tls
+data:
+  # These should be real certificates in production
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t...
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t...

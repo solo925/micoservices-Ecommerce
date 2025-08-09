@@ -33,6 +33,12 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'monitoring.django_middleware.DistributedTracingMiddleware',
+    'monitoring.django_middleware.PrometheusMetricsMiddleware',
+    'monitoring.django_middleware.PerformanceMonitoringMiddleware',
+    'monitoring.django_middleware.BusinessMetricsMiddleware',
+    'gateway.middleware.RateLimitingMiddleware',
+    'gateway.middleware.CircuitBreakerMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

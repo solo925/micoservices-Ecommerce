@@ -1,0 +1,201 @@
+# NGINX Ingress Controller (alternative to Istio Gateway)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ecommerce-ingress
+  namespace: ecommerce
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-connections: "10"
+    nginx.ingress.kubernetes.io/upstream-keepalive-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization"
+    # Enable request tracing
+    nginx.ingress.kubernetes.io/enable-opentracing: "true"
+    # Health check configuration
+    nginx.ingress.kubernetes.io/healthcheck-path: "/health/"
+    nginx.ingress.kubernetes.io/healthcheck-interval: "30s"
+spec:
+  tls:
+  - hosts:
+    - ecommerce.local
+    - api.ecommerce.local
+    secretName: ecommerce-tls
+  rules:
+  - host: ecommerce.local
+    http:
+      paths:
+      # API Gateway routes
+      - path: /api/gateway/(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: gateway-service
+            port:
+              number: 80
+      
+      # Direct service routes
+      - path: /api/products/(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: products-service
+            port:
+              number: 80
+      
+      - path: /api/orders/(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: orders-service
+            port:
+              number: 80
+      
+      - path: /api/payments/(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: payments-service
+            port:
+              number: 80
+      
+      - path: /api/inventory/(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: inventory-service
+            port:
+              number: 80
+      
+      - path: /api/auth/(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: auth-service
+            port:
+              number: 80
+      
+      # Monitoring routes
+      - path: /api/metrics/(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: gateway-service
+            port:
+              number: 80
+      
+      # Default route to gateway
+      - path: /(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: gateway-service
+            port:
+              number: 80
+  
+  # API subdomain
+  - host: api.ecommerce.local
+    http:
+      paths:
+      - path: /(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: gateway-service
+            port:
+              number: 80
+---
+# Monitoring Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: monitoring-ingress
+  namespace: ecommerce-monitoring
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: monitoring-auth
+    nginx.ingress.kubernetes.io/auth-realm: 'Authentication Required - Monitoring'
+spec:
+  tls:
+  - hosts:
+    - grafana.ecommerce.local
+    - prometheus.ecommerce.local
+    - jaeger.ecommerce.local
+    secretName: monitoring-tls
+  rules:
+  - host: grafana.ecommerce.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-service
+            port:
+              number: 3000
+  
+  - host: prometheus.ecommerce.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus-service
+            port:
+              number: 9090
+  
+  - host: jaeger.ecommerce.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jaeger-service
+            port:
+              number: 16686
+---
+# Basic Auth Secret for monitoring
+apiVersion: v1
+kind: Secret
+metadata:
+  name: monitoring-auth
+  namespace: ecommerce-monitoring
+type: Opaque
+data:
+  # admin:admin (base64 encoded)
+  auth: YWRtaW46JGFwcjEkSDY1c3VkdUMkcjFWZ0hNMkVzNFVVUW1lS2t2dWVqLwo=
+---
+# TLS Certificate Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ecommerce-tls
+  namespace: ecommerce
+type: kubernetes.io/tls
+data:
+  # These should be real certificates in production
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t...
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t...
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: monitoring-tls
+  namespace: ecommerce-monitoring
+type: kubernetes.io/tls
+data:
+  # These should be real certificates in production
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t...
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t...

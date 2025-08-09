@@ -1,0 +1,148 @@
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: ecommerce
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: ecommerce-authz
+  namespace: ecommerce
+spec:
+  action: ALLOW
+  rules:
+  # Allow all traffic within the namespace
+  - from:
+    - source:
+        namespaces: ["ecommerce"]
+  # Allow traffic from istio-system (ingress gateway)
+  - from:
+    - source:
+        namespaces: ["istio-system"]
+  # Allow traffic from monitoring namespace
+  - from:
+    - source:
+        namespaces: ["ecommerce-monitoring"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: gateway-authz
+  namespace: ecommerce
+spec:
+  selector:
+    matchLabels:
+      app: gateway
+  action: ALLOW
+  rules:
+  # Allow public access to health checks
+  - to:
+    - operation:
+        paths: ["/api/gateway/health/*", "/health/*", "/prometheus/metrics"]
+  # Allow authenticated access to API endpoints
+  - to:
+    - operation:
+        paths: ["/api/*"]
+    when:
+    - key: request.headers[authorization]
+      values: ["Bearer *"]
+  # Allow GraphQL queries
+  - to:
+    - operation:
+        paths: ["/api/gateway/graphql/*"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: auth-service-authz
+  namespace: ecommerce
+spec:
+  selector:
+    matchLabels:
+      app: auth
+  action: ALLOW
+  rules:
+  # Allow public access to login/register endpoints
+  - to:
+    - operation:
+        paths: ["/api/auth/login/*", "/api/auth/register/*", "/health/*"]
+  # Allow authenticated access to other endpoints
+  - to:
+    - operation:
+        paths: ["/api/auth/*"]
+    when:
+    - key: request.headers[authorization]
+      values: ["Bearer *"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: payments-service-authz
+  namespace: ecommerce
+spec:
+  selector:
+    matchLabels:
+      app: payments
+  action: ALLOW
+  rules:
+  # Only allow authenticated access to payments
+  - to:
+    - operation:
+        paths: ["/api/payments/*"]
+    when:
+    - key: request.headers[authorization]
+      values: ["Bearer *"]
+  # Allow health checks
+  - to:
+    - operation:
+        paths: ["/health/*"]
+---
+# Network Policies for additional security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ecommerce-network-policy
+  namespace: ecommerce
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from istio-system (ingress gateway)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: istio-system
+  # Allow traffic within ecommerce namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ecommerce
+  # Allow monitoring traffic
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ecommerce-monitoring
+  egress:
+  # Allow DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow traffic within ecommerce namespace
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: ecommerce
+  # Allow external API calls (payment providers, etc.)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80

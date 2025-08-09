@@ -12,5 +12,7 @@ urlpatterns = [
     path('api/notification/', include('notification.urls')),
     path('api/audit/', include('audit.urls')),
     path('api/events/', include('events.urls')),
-    path('api/service-discovery/', include('service_discovery.urls'))
+    path('api/service-discovery/', include('service_discovery.urls')),
+    path('api/metrics/', include('monitoring.urls')),
+    path('prometheus/', include('monitoring.urls'))
 ]

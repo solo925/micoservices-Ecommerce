@@ -1,0 +1,133 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Microservices Overview",
+    "tags": ["microservices", "overview"],
+    "style": "dark",
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(django_http_requests_total[5m])) by (service)",
+            "legendFormat": "{{service}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Requests/sec",
+            "min": 0
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(django_http_requests_total{status_code=~\"5..\"}[5m])) by (service)",
+            "legendFormat": "{{service}} errors"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Errors/sec",
+            "min": 0
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "Response Time (95th percentile)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(django_http_request_duration_seconds_bucket[5m])) by (service, le))",
+            "legendFormat": "{{service}} p95"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Seconds",
+            "min": 0
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        }
+      },
+      {
+        "id": 4,
+        "title": "Active Requests",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(django_http_requests_active) by (service)",
+            "legendFormat": "{{service}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Active Requests",
+            "min": 0
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        }
+      },
+      {
+        "id": 5,
+        "title": "Business Metrics",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "increase(orders_total[1h])",
+            "legendFormat": "Orders (1h)"
+          },
+          {
+            "expr": "increase(payments_total[1h])",
+            "legendFormat": "Payments (1h)"
+          },
+          {
+            "expr": "increase(user_registrations_total[1h])",
+            "legendFormat": "Registrations (1h)"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 16
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "30s"
+  }
+}

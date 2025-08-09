@@ -1,0 +1,463 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: microservices-config
+  namespace: ecommerce
+data:
+  DEBUG: "False"
+  DATABASE_URL: "postgresql://admin:securepass123@postgres-service:5432/ecommerce"
+  REDIS_URL: "redis://redis-service:6379/0"
+  CELERY_BROKER_URL: "redis://redis-service:6379/0"
+  DJANGO_SETTINGS_MODULE: "ecommerce.settings"
+---
+# Products Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: products
+  namespace: ecommerce
+  labels:
+    app: products
+    tier: backend
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: products
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: products
+        tier: backend
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/prometheus/metrics"
+    spec:
+      containers:
+      - name: products
+        image: ecommerce/products:latest
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: microservices-config
+        env:
+        - name: SERVICE_NAME
+          value: "products"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "125m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: products-service
+  namespace: ecommerce
+  labels:
+    app: products
+spec:
+  selector:
+    app: products
+  ports:
+  - port: 80
+    targetPort: 8000
+    name: http
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: products-hpa
+  namespace: ecommerce
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: products
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+---
+# Orders Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders
+  namespace: ecommerce
+  labels:
+    app: orders
+    tier: backend
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: orders
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: orders
+        tier: backend
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/prometheus/metrics"
+    spec:
+      containers:
+      - name: orders
+        image: ecommerce/orders:latest
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: microservices-config
+        env:
+        - name: SERVICE_NAME
+          value: "orders"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "125m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-service
+  namespace: ecommerce
+  labels:
+    app: orders
+spec:
+  selector:
+    app: orders
+  ports:
+  - port: 80
+    targetPort: 8000
+    name: http
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: orders-hpa
+  namespace: ecommerce
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: orders
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+# Payments Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments
+  namespace: ecommerce
+  labels:
+    app: payments
+    tier: backend
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: payments
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: payments
+        tier: backend
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/prometheus/metrics"
+    spec:
+      containers:
+      - name: payments
+        image: ecommerce/payments:latest
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: microservices-config
+        env:
+        - name: SERVICE_NAME
+          value: "payments"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "125m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments-service
+  namespace: ecommerce
+  labels:
+    app: payments
+spec:
+  selector:
+    app: payments
+  ports:
+  - port: 80
+    targetPort: 8000
+    name: http
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payments-hpa
+  namespace: ecommerce
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payments
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+# Inventory Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory
+  namespace: ecommerce
+  labels:
+    app: inventory
+    tier: backend
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inventory
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: inventory
+        tier: backend
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/prometheus/metrics"
+    spec:
+      containers:
+      - name: inventory
+        image: ecommerce/inventory:latest
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: microservices-config
+        env:
+        - name: SERVICE_NAME
+          value: "inventory"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "125m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service
+  namespace: ecommerce
+  labels:
+    app: inventory
+spec:
+  selector:
+    app: inventory
+  ports:
+  - port: 80
+    targetPort: 8000
+    name: http
+  type: ClusterIP
+---
+# Authentication Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth
+  namespace: ecommerce
+  labels:
+    app: auth
+    tier: backend
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: auth
+        tier: backend
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/prometheus/metrics"
+    spec:
+      containers:
+      - name: auth
+        image: ecommerce/auth:latest
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: microservices-config
+        env:
+        - name: SERVICE_NAME
+          value: "auth"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "125m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: ecommerce
+  labels:
+    app: auth
+spec:
+  selector:
+    app: auth
+  ports:
+  - port: 80
+    targetPort: 8000
+    name: http
+  type: ClusterIP
