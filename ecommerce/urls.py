@@ -14,5 +14,6 @@ urlpatterns = [
     path('api/events/', include('events.urls')),
     path('api/service-discovery/', include('service_discovery.urls')),
     path('api/metrics/', include('monitoring.urls')),
+    path('api/resilience/', include('resilience.urls')),
     path('prometheus/', include('monitoring.urls'))
 ]
