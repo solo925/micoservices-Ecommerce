@@ -15,5 +15,6 @@ urlpatterns = [
     path('api/service-discovery/', include('service_discovery.urls')),
     path('api/metrics/', include('monitoring.urls')),
     path('api/resilience/', include('resilience.urls')),
+    path('api/saga/', include('saga.urls')),
     path('prometheus/', include('monitoring.urls'))
 ]
