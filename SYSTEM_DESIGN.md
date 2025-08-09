@@ -659,6 +659,224 @@ Each microservice owns its data and database, ensuring:
 - **Independent Scaling**: Databases scale independently based on service needs
 - **Fault Isolation**: Database issues don't cascade across services
 
+### Database Relationship Diagram
+
+The following diagram shows the relationships between different service databases and their key entities:
+
+```mermaid
+erDiagram
+    %% Authentication Service Database
+    User {
+        uuid id PK
+        string username UK
+        string email UK
+        string password_hash
+        string first_name
+        string last_name
+        boolean is_active
+        datetime created_at
+        datetime updated_at
+        datetime last_login
+    }
+    
+    UserRole {
+        uuid id PK
+        uuid user_id FK
+        string role_name
+        datetime created_at
+    }
+    
+    %% Products Service Database
+    Product {
+        uuid id PK
+        string name
+        text description
+        decimal price
+        string category
+        string sku UK
+        json metadata
+        boolean is_active
+        datetime created_at
+        datetime updated_at
+    }
+    
+    ProductCategory {
+        uuid id PK
+        string name UK
+        text description
+        uuid parent_id FK
+        boolean is_active
+    }
+    
+    %% Inventory Service Database
+    InventoryItem {
+        uuid id PK
+        uuid product_id FK
+        integer quantity_available
+        integer quantity_reserved
+        integer quantity_sold
+        integer reorder_level
+        string warehouse_location
+        datetime last_updated
+    }
+    
+    InventoryTransaction {
+        uuid id PK
+        uuid inventory_item_id FK
+        string transaction_type
+        integer quantity_change
+        string reason
+        uuid reference_id
+        datetime created_at
+    }
+    
+    %% Orders Service Database
+    Order {
+        uuid id PK
+        string order_number UK
+        uuid user_id FK
+        string status
+        decimal total_amount
+        decimal tax_amount
+        decimal shipping_amount
+        json shipping_address
+        json billing_address
+        datetime created_at
+        datetime updated_at
+        datetime shipped_at
+    }
+    
+    OrderItem {
+        uuid id PK
+        uuid order_id FK
+        uuid product_id FK
+        integer quantity
+        decimal unit_price
+        decimal total_price
+        datetime created_at
+    }
+    
+    %% Payments Service Database
+    Payment {
+        uuid id PK
+        uuid order_id FK
+        string payment_method
+        decimal amount
+        string currency
+        string status
+        string provider_transaction_id
+        json provider_response
+        datetime created_at
+        datetime processed_at
+    }
+    
+    PaymentRefund {
+        uuid id PK
+        uuid payment_id FK
+        decimal refund_amount
+        string reason
+        string status
+        string provider_refund_id
+        datetime created_at
+        datetime processed_at
+    }
+    
+    %% Notifications Service Database
+    Notification {
+        uuid id PK
+        uuid user_id FK
+        string notification_type
+        string channel
+        string subject
+        text content
+        json metadata
+        string status
+        datetime created_at
+        datetime sent_at
+    }
+    
+    NotificationTemplate {
+        uuid id PK
+        string template_name UK
+        string notification_type
+        string channel
+        text subject_template
+        text content_template
+        json default_variables
+        boolean is_active
+    }
+    
+    %% Audit Service Database
+    AuditLog {
+        uuid id PK
+        string service_name
+        string action
+        uuid user_id FK
+        uuid resource_id
+        json old_values
+        json new_values
+        string ip_address
+        string user_agent
+        datetime created_at
+    }
+    
+    %% Service Discovery Database
+    ServiceRegistry {
+        uuid id PK
+        string service_name UK
+        string service_type
+        string version
+        string base_url
+        string health_check_url
+        string status
+        json capabilities
+        datetime created_at
+        datetime last_heartbeat
+    }
+    
+    ServiceInstance {
+        uuid id PK
+        uuid service_id FK
+        string instance_id UK
+        string host
+        integer port
+        string status
+        json metadata
+        datetime created_at
+        datetime last_heartbeat
+    }
+    
+    %% Cross-Service Relationships (Logical, not physical foreign keys)
+    User ||--o{ Order : "places"
+    User ||--o{ Payment : "makes"
+    User ||--o{ Notification : "receives"
+    User ||--o{ AuditLog : "generates"
+    User ||--o{ UserRole : "has"
+    
+    Product ||--o{ InventoryItem : "tracked_in"
+    Product ||--o{ OrderItem : "ordered_as"
+    Product ||--|| ProductCategory : "belongs_to"
+    
+    Order ||--o{ OrderItem : "contains"
+    Order ||--o{ Payment : "paid_by"
+    
+    Payment ||--o{ PaymentRefund : "refunded_by"
+    
+    InventoryItem ||--o{ InventoryTransaction : "tracked_by"
+    
+    ServiceRegistry ||--o{ ServiceInstance : "runs_on"
+    
+    ProductCategory ||--o{ ProductCategory : "parent_of"
+```
+
+### Database Schema Relationships
+
+**Cross-Service Data Consistency**:
+- Services communicate via APIs, not direct database access
+- Foreign key relationships are logical, maintained by application logic
+- Each service maintains its own data integrity
+- Eventual consistency achieved through event-driven patterns
+
 ### Database Technologies
 
 | Service | Database | Reason |
@@ -785,6 +1003,152 @@ class OrderCreatedEvent:
     total_amount: Decimal
     timestamp: datetime
 ```
+
+## 🔄 Communication Patterns
+
+### Service Communication Flow
+
+The following diagram illustrates the complete order processing flow across all microservices:
+
+```mermaid
+sequenceDiagram
+    participant U as User/Client
+    participant GW as API Gateway
+    participant AUTH as Auth Service
+    participant PROD as Products Service
+    participant INV as Inventory Service
+    participant ORD as Orders Service
+    participant PAY as Payments Service
+    participant NOT as Notification Service
+    participant AUD as Audit Service
+    
+    Note over U,AUD: Complete Order Processing Flow
+    
+    U->>GW: Place Order Request
+    GW->>AUTH: Validate JWT Token
+    AUTH-->>GW: Token Valid + User Info
+    
+    GW->>PROD: Get Product Details
+    PROD-->>GW: Product Information
+    
+    GW->>INV: Check Stock Availability
+    INV-->>GW: Stock Status
+    
+    alt Stock Available
+        GW->>INV: Reserve Inventory
+        INV-->>GW: Reservation Confirmed
+        
+        GW->>ORD: Create Order (PENDING)
+        ORD-->>GW: Order Created
+        
+        GW->>PAY: Process Payment
+        PAY-->>GW: Payment Successful
+        
+        GW->>INV: Confirm Reservation
+        INV-->>GW: Stock Updated
+        
+        GW->>ORD: Update Order Status (CONFIRMED)
+        ORD-->>GW: Order Confirmed
+        
+        GW->>NOT: Send Order Confirmation
+        NOT-->>GW: Notification Sent
+        
+        GW->>AUD: Log Order Success
+        AUD-->>GW: Audit Logged
+        
+        GW-->>U: Order Success Response
+        
+    else Stock Unavailable
+        GW-->>U: Out of Stock Error
+        
+    else Payment Failed
+        GW->>INV: Release Reservation
+        INV-->>GW: Reservation Released
+        
+        GW->>ORD: Cancel Order
+        ORD-->>GW: Order Cancelled
+        
+        GW->>AUD: Log Payment Failure
+        AUD-->>GW: Audit Logged
+        
+        GW-->>U: Payment Failed Response
+    end
+```
+
+### Communication Types
+
+#### 1. Synchronous Communication
+Used for real-time operations requiring immediate response:
+
+```python
+# Direct HTTP API calls
+class OrderService:
+    def create_order(self, order_data):
+        # Synchronous calls for immediate validation
+        user = auth_service.validate_user(order_data.user_id)
+        products = product_service.get_products(order_data.items)
+        availability = inventory_service.check_availability(order_data.items)
+        
+        if availability.all_available:
+            return self.process_order(order_data)
+        else:
+            raise InsufficientStockError()
+```
+
+**Use Cases**:
+- User authentication
+- Product catalog queries
+- Inventory checks
+- Payment processing
+- Order status queries
+
+#### 2. Asynchronous Communication
+Used for eventual consistency and event-driven workflows:
+
+```python
+# Event-driven communication
+class OrderEventHandler:
+    def handle_order_created(self, event: OrderCreatedEvent):
+        # Async processing
+        inventory_service.reserve_items_async(event.order_items)
+        notification_service.send_confirmation_async(event.user_id)
+        audit_service.log_order_event_async(event)
+```
+
+**Event Types**:
+- `order.created` - New order placed
+- `payment.processed` - Payment completed
+- `inventory.reserved` - Stock reserved
+- `order.shipped` - Order shipped
+- `user.registered` - New user account
+
+#### 3. Message Queue Patterns
+
+```python
+# RabbitMQ/Redis message patterns
+class MessagePublisher:
+    def publish_order_event(self, order_id: UUID, event_type: str):
+        message = {
+            "event_id": str(uuid4()),
+            "event_type": event_type,
+            "order_id": str(order_id),
+            "timestamp": datetime.utcnow().isoformat(),
+            "service": "orders"
+        }
+        
+        # Publish to multiple subscribers
+        self.publisher.publish(
+            exchange="orders.events",
+            routing_key=f"order.{event_type}",
+            body=json.dumps(message)
+        )
+```
+
+**Queue Configuration**:
+- **Exchange**: `ecommerce.events` (topic exchange)
+- **Routing Keys**: `{service}.{event_type}`
+- **Durability**: All queues are durable
+- **Dead Letter Queue**: Failed messages after 3 retries
 
 ## 🔒 Security Architecture
 
