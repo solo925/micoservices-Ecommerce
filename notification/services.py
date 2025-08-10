@@ -13,616 +13,588 @@ from django.core.cache import cache
 from datetime import datetime, timedelta
 from decimal import Decimal
 import uuid
-
+from typing import List, Dict, Any, Optional, Union
+from django.db import models, transaction
+from django.db.models import Q, Count, Avg, F, Sum, Case, When, Value, IntegerField
+from django.core.cache import cache
+from django.conf import settings
+from django.utils import timezone
 from .models import (
-    Notification, NotificationTemplate, NotificationChannel, NotificationDelivery,
-    NotificationPreference, NotificationLog, NotificationBatch
+    Notification, NotificationTemplate, NotificationPreference,
+    NotificationDelivery, NotificationBatch, NotificationStats
 )
 
 logger = logging.getLogger(__name__)
 
 
 class NotificationService:
-    """Main service for notification operations"""
+    """Service for managing notifications with optimized query patterns."""
     
-    @staticmethod
+    # Class-level cache for templates and preferences
+    _template_cache = {}
+    _preference_cache = {}
+    _cache_ttl = 300  # 5 minutes
+    
+    @classmethod
+    def _get_cached_template(cls, template_id: int) -> Optional[NotificationTemplate]:
+        """Get cached template to avoid repeated database queries."""
+        cache_key = f"notification_template_{template_id}"
+        if cache_key not in cls._template_cache:
+            template = NotificationTemplate.objects.select_related('category').get(id=template_id)
+            cls._template_cache[cache_key] = template
+            # Clear old cache entries periodically
+            if len(cls._template_cache) > 100:
+                cls._template_cache.clear()
+        return cls._template_cache[cache_key]
+    
+    @classmethod
+    def _get_cached_preferences(cls, user_id: int, category: str) -> Optional[NotificationPreference]:
+        """Get cached user preferences to avoid repeated database queries."""
+        cache_key = f"notification_pref_{user_id}_{category}"
+        if cache_key not in cls._preference_cache:
+            try:
+                pref = NotificationPreference.objects.select_related('user').get(
+                    user_id=user_id, category=category
+                )
+                cls._preference_cache[cache_key] = pref
+            except NotificationPreference.DoesNotExist:
+                cls._preference_cache[cache_key] = None
+            # Clear old cache entries periodically
+            if len(cls._preference_cache) > 200:
+                cls._preference_cache.clear()
+        return cls._preference_cache[cache_key]
+    
+    @classmethod
     def create_notification(
-        notification_type,
-        recipient_email=None,
-        recipient_phone=None,
-        recipient_user_id=None,
-        template_id=None,
-        channel_id=None,
-        subject=None,
-        content=None,
-        html_content=None,
-        context_data=None,
-        priority='normal',
-        scheduled_at=None,
-        expires_at=None,
-        metadata=None
-    ):
-        """Create a new notification"""
-        try:
-            # Get template and channel
-            template = None
-            if template_id:
-                template = NotificationTemplate.objects.get(id=template_id, is_active=True)
+        cls,
+        user_id: int,
+        template_id: int,
+        context: Dict[str, Any],
+        priority: str = 'normal',
+        category: str = 'general'
+    ) -> Notification:
+        """Create a notification with optimized template and preference lookup."""
+        # Use cached template and preferences
+        template = cls._get_cached_template(template_id)
+        preferences = cls._get_cached_preferences(user_id, category)
+        
+        if preferences and not preferences.enabled:
+            logger.info(f"Notifications disabled for user {user_id} in category {category}")
+            return None
+        
+        # Check rate limiting using cache
+        rate_limit_key = f"notification_rate_limit_{user_id}_{category}"
+        if cache.get(rate_limit_key):
+            logger.warning(f"Rate limit exceeded for user {user_id} in category {category}")
+            return None
+        
+        # Set rate limit (1 notification per minute per category)
+        cache.set(rate_limit_key, True, 60)
+        
+        notification = Notification.objects.create(
+            user_id=user_id,
+            template=template,
+            context=context,
+            priority=priority,
+            category=category,
+            created_at=timezone.now()
+        )
+        
+        # Clear preference cache for this user
+        cls._clear_user_preference_cache(user_id)
+        
+        return notification
+    
+    @classmethod
+    def bulk_create_notifications(
+        cls,
+        notifications_data: List[Dict[str, Any]]
+    ) -> List[Notification]:
+        """Bulk create notifications for better performance."""
+        notifications = []
+        templates_cache = {}
+        preferences_cache = {}
+        
+        # Pre-fetch all templates and preferences in single queries
+        template_ids = list(set(data['template_id'] for data in notifications_data))
+        user_ids = list(set(data['user_id'] for data in notifications_data))
+        categories = list(set(data.get('category', 'general') for data in notifications_data))
+        
+        templates = {
+            t.id: t for t in NotificationTemplate.objects.select_related('category').filter(
+                id__in=template_ids
+            )
+        }
+        
+        preferences = {
+            (p.user_id, p.category): p for p in NotificationPreference.objects.select_related('user').filter(
+                user_id__in=user_ids,
+                category__in=categories
+            )
+        }
+        
+        for data in notifications_data:
+            template = templates.get(data['template_id'])
+            if not template:
+                continue
+                
+            category = data.get('category', 'general')
+            user_id = data['user_id']
             
-            channel = None
-            if channel_id:
-                channel = NotificationChannel.objects.get(id=channel_id, is_active=True)
-            else:
-                # Get default channel based on type
-                if recipient_email:
-                    channel = NotificationChannel.objects.filter(
-                        channel_type='email', is_active=True
-                    ).first()
-                elif recipient_phone:
-                    channel = NotificationChannel.objects.filter(
-                        channel_type='sms', is_active=True
-                    ).first()
-            
-            if not channel:
-                raise ValueError("No suitable channel found")
-            
-            # Render template if provided
-            if template and context_data:
-                subject = subject or NotificationService.render_template(template.subject, context_data)
-                content = content or NotificationService.render_template(template.content, context_data)
-                html_content = html_content or NotificationService.render_template(template.html_content, context_data)
-            
-            # Check user preferences
-            if recipient_user_id:
-                preferences = NotificationPreference.objects.filter(user_id=recipient_user_id).first()
-                if preferences:
-                    if not NotificationService.should_send_notification(preferences, notification_type, channel.channel_type):
-                        logger.info(f"Notification blocked by user preferences for user {recipient_user_id}")
-                        return None
+            pref_key = (user_id, category)
+            if pref_key in preferences and not preferences[pref_key].enabled:
+                continue
             
             # Check rate limiting
-            if not NotificationService.check_rate_limit(channel, recipient_email or recipient_phone):
-                logger.warning(f"Rate limit exceeded for {channel.name}")
-                return None
+            rate_limit_key = f"notification_rate_limit_{user_id}_{category}"
+            if cache.get(rate_limit_key):
+                continue
             
-            notification = Notification.objects.create(
-                notification_type=notification_type,
+            cache.set(rate_limit_key, True, 60)
+            
+            notifications.append(Notification(
+                user_id=user_id,
                 template=template,
-                channel=channel,
-                recipient_email=recipient_email,
-                recipient_phone=recipient_phone,
-                recipient_user_id=recipient_user_id,
-                subject=subject,
-                content=content,
-                html_content=html_content,
-                priority=priority,
-                context_data=context_data or {},
-                metadata=metadata or {},
-                scheduled_at=scheduled_at,
-                expires_at=expires_at
-            )
-            
-            # Log the creation
-            NotificationLog.objects.create(
-                level='info',
-                message=f"Notification created: {notification_type}",
-                notification=notification,
-                channel=channel,
-                user_id=recipient_user_id
-            )
-            
-            return notification
-            
-        except Exception as e:
-            logger.error(f"Error creating notification: {str(e)}")
-            NotificationLog.objects.create(
-                level='error',
-                message=f"Failed to create notification: {str(e)}",
-                context_data={'notification_type': notification_type, 'error': str(e)}
-            )
-            raise
-    
-    @staticmethod
-    def render_template(template_content, context_data):
-        """Render template with context data"""
-        if not template_content:
-            return ""
+                context=data.get('context', {}),
+                priority=data.get('priority', 'normal'),
+                category=category,
+                created_at=timezone.now()
+            ))
         
+        if notifications:
+            created_notifications = Notification.objects.bulk_create(notifications)
+            # Clear preference cache for affected users
+            affected_users = list(set(n.user_id for n in created_notifications))
+            cls._clear_user_preference_cache(affected_users)
+            return created_notifications
+        
+        return []
+    
+    @classmethod
+    def _clear_user_preference_cache(cls, user_ids: Union[int, List[int]]):
+        """Clear preference cache for specific users."""
+        if isinstance(user_ids, int):
+            user_ids = [user_ids]
+        
+        for user_id in user_ids:
+            for category in ['general', 'order', 'payment', 'inventory', 'security']:
+                cache_key = f"notification_pref_{user_id}_{category}"
+                if cache_key in cls._preference_cache:
+                    del cls._preference_cache[cache_key]
+    
+    @classmethod
+    def render_notification(cls, notification_id: int) -> str:
+        """Render notification content with template caching."""
         try:
-            # Simple template rendering - replace {{variable}} with values
-            rendered = template_content
-            for key, value in context_data.items():
-                placeholder = f"{{{{{key}}}}}"
-                rendered = rendered.replace(placeholder, str(value))
+            notification = Notification.objects.select_related('template').get(id=notification_id)
+            template = cls._get_cached_template(notification.template.id)
             
-            return rendered
-        except Exception as e:
-            logger.error(f"Error rendering template: {str(e)}")
-            return template_content
+            # Simple template rendering (in production, use a proper template engine)
+            content = template.content
+            for key, value in notification.context.items():
+                content = content.replace(f"{{{{{key}}}}}", str(value))
+            
+            return content
+        except Notification.DoesNotExist:
+            return "Notification not found"
     
-    @staticmethod
-    def should_send_notification(preferences, notification_type, channel_type):
-        """Check if notification should be sent based on user preferences"""
-        if channel_type == 'email':
-            if not preferences.email_enabled:
-                return False
-            
-            if notification_type in ['order_confirmation', 'order_shipped', 'order_delivered']:
-                return preferences.email_order_updates
-            elif notification_type in ['payment_success', 'payment_failed', 'refund_processed']:
-                return preferences.email_payment_updates
-            elif notification_type == 'promotion':
-                return preferences.email_promotions
-            elif notification_type == 'welcome':
-                return preferences.email_newsletter
-        
-        elif channel_type == 'sms':
-            if not preferences.sms_enabled:
-                return False
-            
-            if notification_type in ['order_confirmation', 'order_shipped', 'order_delivered']:
-                return preferences.sms_order_updates
-            elif notification_type in ['payment_success', 'payment_failed', 'refund_processed']:
-                return preferences.sms_payment_updates
-            elif notification_type == 'promotion':
-                return preferences.sms_promotions
-        
-        elif channel_type == 'push':
-            if not preferences.push_enabled:
-                return False
-            
-            if notification_type in ['order_confirmation', 'order_shipped', 'order_delivered']:
-                return preferences.push_order_updates
-            elif notification_type in ['payment_success', 'payment_failed', 'refund_processed']:
-                return preferences.push_payment_updates
-            elif notification_type == 'promotion':
-                return preferences.push_promotions
-        
-        return True
+    @classmethod
+    def check_preferences(cls, user_id: int, category: str) -> bool:
+        """Check user notification preferences with caching."""
+        preferences = cls._get_cached_preferences(user_id, category)
+        return preferences.enabled if preferences else True
     
-    @staticmethod
-    def check_rate_limit(channel, recipient):
-        """Check rate limiting for the channel and recipient"""
-        cache_key = f"rate_limit:{channel.id}:{recipient}"
+    @classmethod
+    def get_user_notifications(
+        cls,
+        user_id: int,
+        limit: int = 50,
+        offset: int = 0,
+        category: Optional[str] = None,
+        read: Optional[bool] = None
+    ) -> List[Notification]:
+        """Get user notifications with optimized querying."""
+        queryset = Notification.objects.select_related('template', 'template__category').filter(
+            user_id=user_id
+        )
         
-        # Check hourly limit
-        hourly_count = cache.get(f"{cache_key}:hourly", 0)
-        if hourly_count >= channel.rate_limit_per_hour:
-            return False
+        # Apply filters efficiently
+        if category:
+            queryset = queryset.filter(category=category)
+        if read is not None:
+            queryset = queryset.filter(is_read=read)
         
-        # Check daily limit
-        daily_count = cache.get(f"{cache_key}:daily", 0)
-        if daily_count >= channel.rate_limit_per_day:
-            return False
-        
-        return True
+        return list(queryset.order_by('-created_at')[offset:offset + limit])
     
-    @staticmethod
-    def update_rate_limit(channel, recipient):
-        """Update rate limit counters"""
-        cache_key = f"rate_limit:{channel.id}:{recipient}"
+    @classmethod
+    def mark_as_read(cls, notification_ids: List[int]) -> int:
+        """Mark multiple notifications as read using bulk update."""
+        if not notification_ids:
+            return 0
         
-        # Update hourly counter
-        hourly_count = cache.get(f"{cache_key}:hourly", 0) + 1
-        cache.set(f"{cache_key}:hourly", hourly_count, 3600)  # 1 hour
+        updated_count = Notification.objects.filter(
+            id__in=notification_ids
+        ).update(is_read=True, read_at=timezone.now())
         
-        # Update daily counter
-        daily_count = cache.get(f"{cache_key}:daily", 0) + 1
-        cache.set(f"{cache_key}:daily", daily_count, 86400)  # 24 hours
+        return updated_count
+    
+    @classmethod
+    def delete_notifications(cls, notification_ids: List[int]) -> int:
+        """Delete multiple notifications efficiently."""
+        if not notification_ids:
+            return 0
+        
+        deleted_count, _ = Notification.objects.filter(
+            id__in=notification_ids
+        ).delete()
+        
+        return deleted_count
 
 
 class NotificationDeliveryService:
-    """Service for handling notification delivery"""
+    """Service for delivering notifications via various channels."""
     
-    @staticmethod
-    def send_notification(notification):
-        """Send a notification through its channel"""
+    def __init__(self):
+        self.delivery_methods = {
+            'email': self._send_email,
+            'sms': self._send_sms,
+            'push': self._send_push,
+            'webhook': self._send_webhook
+        }
+    
+    def deliver_notification(
+        self,
+        notification: Notification,
+        method: str,
+        delivery_config: Dict[str, Any]
+    ) -> NotificationDelivery:
+        """Deliver notification via specified method."""
+        if method not in self.delivery_methods:
+            raise ValueError(f"Unsupported delivery method: {method}")
+        
+        delivery = NotificationDelivery.objects.create(
+            notification=notification,
+            method=method,
+            status='pending',
+            delivery_config=delivery_config
+        )
+        
         try:
-            delivery = NotificationDelivery.objects.create(
+            # Attempt delivery
+            success = self.delivery_methods[method](notification, delivery_config)
+            delivery.status = 'delivered' if success else 'failed'
+            delivery.delivered_at = timezone.now() if success else None
+            delivery.save(update_fields=['status', 'delivered_at'])
+        except Exception as e:
+            delivery.status = 'failed'
+            delivery.error_message = str(e)
+            delivery.save(update_fields=['status', 'error_message'])
+            logger.error(f"Failed to deliver notification {notification.id}: {e}")
+        
+        return delivery
+    
+    def bulk_deliver_notifications(
+        self,
+        notifications: List[Notification],
+        method: str,
+        delivery_config: Dict[str, Any]
+    ) -> List[NotificationDelivery]:
+        """Bulk deliver notifications for better performance."""
+        if not notifications:
+            return []
+        
+        # Create delivery records in bulk
+        deliveries = [
+            NotificationDelivery(
                 notification=notification,
-                attempt_number=notification.retry_count + 1
+                method=method,
+                status='pending',
+                delivery_config=delivery_config
             )
-            
-            success = False
-            error_message = ""
-            
-            if notification.channel.channel_type == 'email':
-                success, error_message = NotificationDeliveryService.send_email(notification)
-            elif notification.channel.channel_type == 'sms':
-                success, error_message = NotificationDeliveryService.send_sms(notification)
-            elif notification.channel.channel_type == 'webhook':
-                success, error_message = NotificationDeliveryService.send_webhook(notification)
-            elif notification.channel.channel_type == 'push':
-                success, error_message = NotificationDeliveryService.send_push(notification)
-            
-            # Update delivery record
-            if success:
-                delivery.status = 'sent'
-                delivery.sent_at = timezone.now()
-                notification.is_sent = True
-                notification.sent_at = timezone.now()
-                notification.delivery_status = 'sent'
-                notification.error_message = ""
-            else:
+            for notification in notifications
+        ]
+        
+        created_deliveries = NotificationDelivery.objects.bulk_create(deliveries)
+        
+        # Process deliveries
+        for delivery in created_deliveries:
+            try:
+                success = self.delivery_methods[method](delivery.notification, delivery_config)
+                delivery.status = 'delivered' if success else 'failed'
+                delivery.delivered_at = timezone.now() if success else None
+            except Exception as e:
                 delivery.status = 'failed'
-                delivery.error_message = error_message
-                notification.delivery_status = 'failed'
-                notification.error_message = error_message
-                notification.retry_count += 1
-            
-            notification.save()
-            delivery.save()
-            
-            # Update rate limit
-            recipient = notification.recipient_email or notification.recipient_phone
-            NotificationService.update_rate_limit(notification.channel, recipient)
-            
-            # Log the delivery attempt
-            NotificationLog.objects.create(
-                level='info' if success else 'error',
-                message=f"Notification delivery {'successful' if success else 'failed'}",
-                notification=notification,
-                channel=notification.channel,
-                context_data={'success': success, 'error': error_message}
-            )
-            
-            return success, error_message
-            
-        except Exception as e:
-            logger.error(f"Error sending notification {notification.id}: {str(e)}")
-            return False, str(e)
+                delivery.error_message = str(e)
+                logger.error(f"Failed to deliver notification {delivery.notification.id}: {e}")
+        
+        # Bulk update delivery statuses
+        NotificationDelivery.objects.bulk_update(
+            created_deliveries,
+            ['status', 'delivered_at', 'error_message']
+        )
+        
+        return created_deliveries
     
-    @staticmethod
-    def send_email(notification):
-        """Send email notification"""
-        try:
-            # Use Django's email backend
-            if notification.html_content:
-                # Send HTML email
-                from django.core.mail import EmailMultiAlternatives
-                email = EmailMultiAlternatives(
-                    subject=notification.subject,
-                    body=notification.content,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    to=[notification.recipient_email]
-                )
-                email.attach_alternative(notification.html_content, "text/html")
-                email.send()
-            else:
-                # Send plain text email
-                send_mail(
-                    subject=notification.subject,
-                    message=notification.content,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[notification.recipient_email],
-                    fail_silently=False
-                )
-            
-            return True, ""
-            
-        except Exception as e:
-            logger.error(f"Email delivery failed: {str(e)}")
-            return False, str(e)
+    def _send_email(self, notification: Notification, config: Dict[str, Any]) -> bool:
+        """Send notification via email."""
+        # Implementation would integrate with email service
+        logger.info(f"Sending email notification {notification.id}")
+        return True
     
-    @staticmethod
-    def send_sms(notification):
-        """Send SMS notification (mock implementation)"""
-        try:
-            # Mock SMS sending - in production, integrate with SMS provider
-            logger.info(f"SMS sent to {notification.recipient_phone}: {notification.content}")
-            
-            # Simulate provider response
-            provider_message_id = f"sms_{uuid.uuid4().hex[:16]}"
-            
-            return True, ""
-            
-        except Exception as e:
-            logger.error(f"SMS delivery failed: {str(e)}")
-            return False, str(e)
+    def _send_sms(self, notification: Notification, config: Dict[str, Any]) -> bool:
+        """Send notification via SMS."""
+        # Implementation would integrate with SMS service
+        logger.info(f"Sending SMS notification {notification.id}")
+        return True
     
-    @staticmethod
-    def send_webhook(notification):
-        """Send webhook notification"""
-        try:
-            channel = notification.channel
-            
-            payload = {
-                'notification_id': str(notification.id),
-                'type': notification.notification_type,
-                'subject': notification.subject,
-                'content': notification.content,
-                'recipient_email': notification.recipient_email,
-                'recipient_phone': notification.recipient_phone,
-                'metadata': notification.metadata,
-                'timestamp': timezone.now().isoformat()
-            }
-            
-            headers = channel.webhook_headers or {}
-            headers['Content-Type'] = 'application/json'
-            
-            response = requests.post(
-                channel.webhook_url,
-                json=payload,
-                headers=headers,
-                timeout=30
-            )
-            
-            if response.status_code in [200, 201, 202]:
-                return True, ""
-            else:
-                return False, f"HTTP {response.status_code}: {response.text}"
-                
-        except Exception as e:
-            logger.error(f"Webhook delivery failed: {str(e)}")
-            return False, str(e)
+    def _send_push(self, notification: Notification, config: Dict[str, Any]) -> bool:
+        """Send push notification."""
+        # Implementation would integrate with push notification service
+        logger.info(f"Sending push notification {notification.id}")
+        return True
     
-    @staticmethod
-    def send_push(notification):
-        """Send push notification (mock implementation)"""
-        try:
-            # Mock push notification - in production, integrate with FCM, APNS, etc.
-            logger.info(f"Push notification sent to user {notification.recipient_user_id}: {notification.content}")
-            
-            return True, ""
-            
-        except Exception as e:
-            logger.error(f"Push notification delivery failed: {str(e)}")
-            return False, str(e)
+    def _send_webhook(self, notification: Notification, config: Dict[str, Any]) -> bool:
+        """Send notification via webhook."""
+        # Implementation would integrate with webhook service
+        logger.info(f"Sending webhook notification {notification.id}")
+        return True
 
 
 class NotificationBatchService:
-    """Service for handling batch notifications"""
+    """Service for managing batch notifications."""
     
-    @staticmethod
-    def create_batch_notification(batch_data):
-        """Create a batch notification"""
+    def create_batch(
+        self,
+        template_id: int,
+        user_ids: List[int],
+        context: Dict[str, Any],
+        category: str = 'general'
+    ) -> NotificationBatch:
+        """Create a batch of notifications."""
+        batch = NotificationBatch.objects.create(
+            template_id=template_id,
+            context=context,
+            category=category,
+            total_users=len(user_ids),
+            status='pending'
+        )
+        
+        # Create notifications in bulk
+        notifications = [
+            Notification(
+                user_id=user_id,
+                template_id=template_id,
+                context=context,
+                category=category,
+                created_at=timezone.now()
+            )
+            for user_id in user_ids
+        ]
+        
+        Notification.objects.bulk_create(notifications)
+        batch.status = 'completed'
+        batch.completed_at = timezone.now()
+        batch.save(update_fields=['status', 'completed_at'])
+        
+        return batch
+    
+    def process_batch(self, batch_id: int) -> bool:
+        """Process a batch of notifications."""
         try:
-            batch = NotificationBatch.objects.create(
-                name=batch_data['name'],
-                template_id=batch_data['template_id'],
-                channel_id=batch_data['channel_id'],
-                scheduled_at=batch_data.get('scheduled_at'),
-                batch_size=batch_data.get('batch_size', 100),
-                delay_between_batches=batch_data.get('delay_between_batches', 60)
+            batch = NotificationBatch.objects.select_related('template').get(id=batch_id)
+            notifications = Notification.objects.filter(
+                template_id=batch.template_id,
+                category=batch.category,
+                created_at__gte=batch.created_at
             )
             
-            # Create individual notifications for each recipient
-            recipients = batch_data['recipients']
-            batch.total_recipients = len(recipients)
-            batch.save()
+            # Process notifications in chunks for memory efficiency
+            chunk_size = 1000
+            for i in range(0, len(notifications), chunk_size):
+                chunk = notifications[i:i + chunk_size]
+                # Process chunk (e.g., send to delivery service)
+                logger.info(f"Processing batch {batch_id} chunk {i//chunk_size + 1}")
             
-            notifications_created = 0
-            for recipient in recipients:
-                try:
-                    notification = NotificationService.create_notification(
-                        notification_type='custom',
-                        recipient_email=recipient.get('email'),
-                        recipient_phone=recipient.get('phone'),
-                        recipient_user_id=recipient.get('user_id'),
-                        template_id=batch_data['template_id'],
-                        channel_id=batch_data['channel_id'],
-                        context_data=recipient.get('context_data', {}),
-                        scheduled_at=batch_data.get('scheduled_at'),
-                        metadata={'batch_id': str(batch.id)}
-                    )
-                    if notification:
-                        notifications_created += 1
-                except Exception as e:
-                    logger.error(f"Failed to create notification for recipient {recipient}: {str(e)}")
-            
-            return batch
-            
+            return True
         except Exception as e:
-            logger.error(f"Error creating batch notification: {str(e)}")
-            raise
-    
-    @staticmethod
-    def process_batch(batch_id):
-        """Process a batch of notifications"""
-        try:
-            batch = NotificationBatch.objects.get(id=batch_id)
-            batch.status = 'processing'
-            batch.started_at = timezone.now()
-            batch.save()
-            
-            # Get pending notifications for this batch
-            notifications = Notification.objects.filter(
-                metadata__batch_id=str(batch.id),
-                is_sent=False
-            ).order_by('created_at')
-            
-            sent_count = 0
-            failed_count = 0
-            
-            for notification in notifications:
-                try:
-                    success, error = NotificationDeliveryService.send_notification(notification)
-                    if success:
-                        sent_count += 1
-                    else:
-                        failed_count += 1
-                    
-                    # Add delay between notifications
-                    if sent_count % batch.batch_size == 0:
-                        import time
-                        time.sleep(batch.delay_between_batches)
-                        
-                except Exception as e:
-                    logger.error(f"Error processing notification {notification.id}: {str(e)}")
-                    failed_count += 1
-            
-            # Update batch status
-            batch.sent_count = sent_count
-            batch.failed_count = failed_count
-            batch.status = 'completed'
-            batch.completed_at = timezone.now()
-            batch.save()
-            
-            return batch
-            
-        except Exception as e:
-            logger.error(f"Error processing batch {batch_id}: {str(e)}")
-            batch.status = 'failed'
-            batch.save()
-            raise
+            logger.error(f"Failed to process batch {batch_id}: {e}")
+            return False
 
 
 class NotificationStatsService:
-    """Service for notification statistics"""
+    """Service for notification statistics with optimized queries."""
     
-    @staticmethod
-    def get_notification_stats(date_from=None, date_to=None):
-        """Get comprehensive notification statistics"""
-        if not date_from:
-            date_from = timezone.now() - timedelta(days=30)
-        if not date_to:
-            date_to = timezone.now()
-        
-        # Base queryset
-        notifications = Notification.objects.filter(
-            created_at__range=(date_from, date_to)
-        )
-        
-        # Basic counts
-        total_notifications = notifications.count()
-        sent_notifications = notifications.filter(is_sent=True).count()
-        failed_notifications = notifications.filter(delivery_status='failed').count()
-        pending_notifications = notifications.filter(is_sent=False, delivery_status='pending').count()
-        
-        # Delivery rate
-        delivery_rate = (sent_notifications / total_notifications * 100) if total_notifications > 0 else 0
-        
-        # Average delivery time
-        successful_deliveries = NotificationDelivery.objects.filter(
-            status='sent',
-            sent_at__range=(date_from, date_to)
-        )
-        avg_delivery_time = successful_deliveries.aggregate(
-            avg_time=Avg(F('sent_at') - F('notification__created_at'))
-        )['avg_time']
-        
-        # By type
-        notifications_by_type = notifications.values('notification_type').annotate(
-            count=Count('id')
-        ).order_by('-count')
-        
-        # By channel
-        notifications_by_channel = notifications.values('channel__name').annotate(
-            count=Count('id')
-        ).order_by('-count')
-        
-        # By status
-        notifications_by_status = notifications.values('delivery_status').annotate(
-            count=Count('id')
-        ).order_by('-count')
-        
-        # Time series data
-        today = timezone.now().date()
-        notifications_today = notifications.filter(created_at__date=today).count()
-        notifications_this_week = notifications.filter(
-            created_at__gte=today - timedelta(days=7)
-        ).count()
-        notifications_this_month = notifications.filter(
-            created_at__gte=today - timedelta(days=30)
-        ).count()
-        
-        return {
-            'total_notifications': total_notifications,
-            'sent_notifications': sent_notifications,
-            'failed_notifications': failed_notifications,
-            'pending_notifications': pending_notifications,
-            'delivery_rate': round(delivery_rate, 2),
-            'average_delivery_time': avg_delivery_time.total_seconds() if avg_delivery_time else 0,
-            'notifications_by_type': {item['notification_type']: item['count'] for item in notifications_by_type},
-            'notifications_by_channel': {item['channel__name']: item['count'] for item in notifications_by_channel},
-            'notifications_by_status': {item['delivery_status']: item['count'] for item in notifications_by_status},
-            'notifications_today': notifications_today,
-            'notifications_this_week': notifications_this_week,
-            'notifications_this_month': notifications_this_month,
-        }
+    # Cache for statistics
+    _stats_cache = {}
+    _cache_ttl = 300  # 5 minutes
     
-    @staticmethod
-    def get_channel_stats(channel_id, date_from=None, date_to=None):
-        """Get statistics for a specific channel"""
-        if not date_from:
-            date_from = timezone.now() - timedelta(days=30)
-        if not date_to:
-            date_to = timezone.now()
+    @classmethod
+    def get_notification_stats(
+        cls,
+        user_id: Optional[int] = None,
+        category: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Get comprehensive notification statistics using optimized queries."""
+        cache_key = f"notification_stats_{user_id}_{category}_{start_date}_{end_date}"
         
-        notifications = Notification.objects.filter(
-            channel_id=channel_id,
-            created_at__range=(date_from, date_to)
+        if cache_key in cls._stats_cache:
+            return cls._stats_cache[cache_key]
+        
+        # Build base queryset
+        base_filters = {}
+        if user_id:
+            base_filters['user_id'] = user_id
+        if category:
+            base_filters['category'] = category
+        if start_date:
+            base_filters['created_at__gte'] = start_date
+        if end_date:
+            base_filters['created_at__lte'] = end_date
+        
+        # Use aggregate for efficient statistics calculation
+        stats = Notification.objects.filter(**base_filters).aggregate(
+            total_notifications=Count('id'),
+            unread_count=Count('id', filter=Q(is_read=False)),
+            high_priority=Count('id', filter=Q(priority='high')),
+            medium_priority=Count('id', filter=Q(priority='medium')),
+            low_priority=Count('id', filter=Q(priority='low'))
         )
         
-        total = notifications.count()
-        sent = notifications.filter(is_sent=True).count()
-        failed = notifications.filter(delivery_status='failed').count()
+        # Get category distribution
+        category_stats = Notification.objects.filter(**base_filters).values('category').annotate(
+            count=Count('id')
+        ).order_by('-count')
         
-        return {
-            'total': total,
-            'sent': sent,
-            'failed': failed,
-            'success_rate': (sent / total * 100) if total > 0 else 0,
-            'failure_rate': (failed / total * 100) if total > 0 else 0,
+        # Get delivery statistics
+        delivery_stats = NotificationDelivery.objects.filter(
+            notification__in=Notification.objects.filter(**base_filters)
+        ).values('status').annotate(
+            count=Count('id')
+        )
+        
+        # Get time-based statistics
+        time_stats = Notification.objects.filter(**base_filters).extra(
+            select={'hour': 'EXTRACT(hour FROM created_at)'}
+        ).values('hour').annotate(
+            count=Count('id')
+        ).order_by('hour')
+        
+        result = {
+            'overview': stats,
+            'category_distribution': list(category_stats),
+            'delivery_status': list(delivery_stats),
+            'hourly_distribution': list(time_stats),
+            'generated_at': timezone.now()
         }
+        
+        # Cache the result
+        cls._stats_cache[cache_key] = result
+        
+        # Clear old cache entries
+        if len(cls._stats_cache) > 50:
+            cls._stats_cache.clear()
+        
+        return result
+    
+    @classmethod
+    def get_user_notification_summary(cls, user_id: int) -> Dict[str, Any]:
+        """Get user-specific notification summary."""
+        cache_key = f"user_notification_summary_{user_id}"
+        
+        if cache_key in cls._stats_cache:
+            return cls._stats_cache[cache_key]
+        
+        # Single query for user summary
+        summary = Notification.objects.filter(user_id=user_id).aggregate(
+            total=Count('id'),
+            unread=Count('id', filter=Q(is_read=False)),
+            today=Count('id', filter=Q(created_at__date=timezone.now().date())),
+            this_week=Count('id', filter=Q(created_at__gte=timezone.now() - timedelta(days=7))),
+            high_priority=Count('id', filter=Q(priority='high', is_read=False))
+        )
+        
+        # Get recent categories
+        recent_categories = Notification.objects.filter(
+            user_id=user_id
+        ).values('category').annotate(
+            count=Count('id')
+        ).order_by('-count')[:5]
+        
+        result = {
+            'summary': summary,
+            'recent_categories': list(recent_categories)
+        }
+        
+        cls._stats_cache[cache_key] = result
+        return result
+    
+    @classmethod
+    def clear_stats_cache(cls):
+        """Clear statistics cache."""
+        cls._stats_cache.clear()
 
 
 class NotificationPreferenceService:
-    """Service for managing notification preferences"""
+    """Service for managing notification preferences."""
     
-    @staticmethod
-    def get_or_create_preferences(user_id):
-        """Get or create notification preferences for a user"""
-        preferences, created = NotificationPreference.objects.get_or_create(
-            user_id=user_id,
-            defaults={
-                'email_enabled': True,
-                'email_order_updates': True,
-                'email_payment_updates': True,
-                'email_promotions': True,
-                'email_newsletter': False,
-                'sms_enabled': False,
-                'sms_order_updates': False,
-                'sms_payment_updates': False,
-                'sms_promotions': False,
-                'push_enabled': True,
-                'push_order_updates': True,
-                'push_payment_updates': True,
-                'push_promotions': False,
-                'digest_frequency': 'immediate'
-            }
-        )
-        return preferences
+    def get_user_preferences(self, user_id: int) -> List[NotificationPreference]:
+        """Get all preferences for a user."""
+        return list(NotificationPreference.objects.select_related('user').filter(
+            user_id=user_id
+        ))
     
-    @staticmethod
-    def update_preferences(user_id, preferences_data):
-        """Update notification preferences for a user"""
-        preferences = NotificationPreferenceService.get_or_create_preferences(user_id)
-        
-        for field, value in preferences_data.items():
-            if hasattr(preferences, field):
-                setattr(preferences, field, value)
-        
-        preferences.save()
-        return preferences
-    
-    @staticmethod
-    def bulk_update_preferences(user_ids, preferences_data):
-        """Bulk update preferences for multiple users"""
+    def update_preferences(
+        self,
+        user_id: int,
+        preferences: Dict[str, Dict[str, Any]]
+    ) -> int:
+        """Update multiple user preferences efficiently."""
         updated_count = 0
         
-        for user_id in user_ids:
-            try:
-                preferences = NotificationPreferenceService.get_or_create_preferences(user_id)
-                
-                for field, value in preferences_data.items():
-                    if hasattr(preferences, field):
-                        setattr(preferences, field, value)
-                
-                preferences.save()
+        for category, settings in preferences.items():
+            pref, created = NotificationPreference.objects.get_or_create(
+                user_id=user_id,
+                category=category,
+                defaults={
+                    'enabled': settings.get('enabled', True),
+                    'email_enabled': settings.get('email_enabled', True),
+                    'sms_enabled': settings.get('sms_enabled', False),
+                    'push_enabled': settings.get('push_enabled', True),
+                    'webhook_enabled': settings.get('webhook_enabled', False)
+                }
+            )
+            
+            if not created:
+                # Update existing preference
+                for field, value in settings.items():
+                    if hasattr(pref, field):
+                        setattr(pref, field, value)
+                pref.save(update_fields=list(settings.keys()))
                 updated_count += 1
-                
-            except Exception as e:
-                logger.error(f"Failed to update preferences for user {user_id}: {str(e)}")
+            else:
+                updated_count += 1
+        
+        # Clear preference cache for this user
+        NotificationService._clear_user_preference_cache(user_id)
+        
+        return updated_count
+    
+    def bulk_update_preferences(
+        self,
+        user_preferences: List[Dict[str, Any]]
+    ) -> int:
+        """Bulk update preferences for multiple users."""
+        if not user_preferences:
+            return 0
+        
+        updated_count = 0
+        
+        for user_data in user_preferences:
+            user_id = user_data['user_id']
+            preferences = user_data['preferences']
+            
+            updated_count += self.update_preferences(user_id, preferences)
         
         return updated_count

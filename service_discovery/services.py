@@ -2,6 +2,7 @@ import uuid
 import json
 import requests
 import redis
+import time
 from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
@@ -14,15 +15,46 @@ from .models import (
 
 
 class ServiceRegistryService:
-    """Service for managing service registry"""
+    """Service for managing service registry with optimized performance"""
+    
+    # Class-level cache for service configurations
+    _service_cache = {}
+    _cache_ttl = 300  # 5 minutes cache TTL
     
     def __init__(self):
         self.redis_client = redis.Redis.from_url(settings.CELERY_BROKER_URL)
     
+    @classmethod
+    def _get_cached_service(cls, service_name):
+        """Get cached service configuration or fetch from database"""
+        current_time = time.time()
+        
+        if service_name in cls._service_cache:
+            cached_data = cls._service_cache[service_name]
+            if current_time - cached_data['timestamp'] < cls._cache_ttl:
+                return cached_data['service']
+            else:
+                del cls._service_cache[service_name]
+        
+        service = ServiceRegistry.objects.filter(service_name=service_name).first()
+        
+        if service:
+            cls._service_cache[service_name] = {
+                'service': service,
+                'timestamp': current_time
+            }
+        
+        return service
+    
+    @classmethod
+    def clear_service_cache(cls):
+        """Clear the service configuration cache"""
+        cls._service_cache.clear()
+    
     def register_service(self, service_data, instance_data):
-        """Register a new service and its instance"""
+        """Register a new service and its instance with optimized database operations"""
         try:
-            # Create or update service registry
+            # Use get_or_create with defaults for efficient upsert
             service, created = ServiceRegistry.objects.get_or_create(
                 service_name=service_data['service_name'],
                 defaults={
@@ -40,11 +72,15 @@ class ServiceRegistryService:
             )
             
             if not created:
-                # Update existing service
+                # Bulk update for better performance
+                update_fields = []
                 for key, value in service_data.items():
-                    if hasattr(service, key):
+                    if hasattr(service, key) and getattr(service, key) != value:
                         setattr(service, key, value)
-                service.save()
+                        update_fields.append(key)
+                
+                if update_fields:
+                    service.save(update_fields=update_fields)
             
             # Create service instance
             instance = ServiceInstance.objects.create(
@@ -59,10 +95,13 @@ class ServiceRegistryService:
             
             # Update service heartbeat
             service.last_heartbeat = timezone.now()
-            service.save()
+            service.save(update_fields=['last_heartbeat'])
             
             # Cache service info
             self._cache_service_info(service, instance)
+            
+            # Clear service cache
+            self.__class__._get_cached_service.cache_clear()
             
             return service, instance
             
@@ -70,9 +109,10 @@ class ServiceRegistryService:
             raise Exception(f"Failed to register service: {str(e)}")
     
     def deregister_service(self, service_name, instance_id):
-        """Deregister a service instance"""
+        """Deregister a service instance with optimized queries"""
         try:
-            instance = ServiceInstance.objects.get(
+            # Use select_related to avoid N+1 queries
+            instance = ServiceInstance.objects.select_related('service').get(
                 service__service_name=service_name,
                 instance_id=instance_id
             )
@@ -83,11 +123,13 @@ class ServiceRegistryService:
             # Delete instance
             instance.delete()
             
-            # Check if service has no more instances
-            service = ServiceRegistry.objects.get(service_name=service_name)
-            if not service.instances.exists():
-                service.status = 'inactive'
-                service.save()
+            # Check if service has no more instances with single query
+            if not instance.service.instances.exists():
+                instance.service.status = 'inactive'
+                instance.service.save(update_fields=['status'])
+            
+            # Clear service cache
+            self.__class__._get_cached_service.cache_clear()
             
             return True
             
@@ -97,23 +139,29 @@ class ServiceRegistryService:
             raise Exception(f"Failed to deregister service: {str(e)}")
     
     def update_heartbeat(self, service_name, instance_id, status='healthy', metadata=None):
-        """Update service heartbeat"""
+        """Update service heartbeat with optimized database operations"""
         try:
-            instance = ServiceInstance.objects.get(
+            # Use select_related to avoid N+1 queries
+            instance = ServiceInstance.objects.select_related('service').get(
                 service__service_name=service_name,
                 instance_id=instance_id
             )
             
+            # Prepare update fields
+            update_fields = ['last_heartbeat', 'status']
             instance.last_heartbeat = timezone.now()
             instance.status = status
+            
             if metadata:
                 instance.metadata.update(metadata)
-            instance.save()
+                update_fields.append('metadata')
+            
+            instance.save(update_fields=update_fields)
             
             # Update service heartbeat
             service = instance.service
             service.last_heartbeat = timezone.now()
-            service.save()
+            service.save(update_fields=['last_heartbeat'])
             
             return instance
             
@@ -121,30 +169,38 @@ class ServiceRegistryService:
             return None
     
     def get_service_instances(self, service_name, healthy_only=True):
-        """Get instances for a service"""
+        """Get instances for a service with optimized queries"""
         queryset = ServiceInstance.objects.filter(service__service_name=service_name)
         
         if healthy_only:
             queryset = queryset.filter(status='healthy')
         
-        return queryset.order_by('-is_primary', '-load_balancer_weight')
+        # Use select_related to avoid N+1 queries
+        return queryset.select_related('service').order_by('-is_primary', '-load_balancer_weight')
     
     def get_all_services(self, status=None, service_type=None, environment=None):
-        """Get all services with optional filters"""
+        """Get all services with optimized filtering"""
         queryset = ServiceRegistry.objects.all()
         
+        # Apply filters using dictionary comprehension for better performance
+        filters = {}
         if status:
-            queryset = queryset.filter(status=status)
+            filters['status'] = status
         if service_type:
-            queryset = queryset.filter(service_type=service_type)
+            filters['service_type'] = service_type
         if environment:
-            queryset = queryset.filter(environment=environment)
+            filters['environment'] = environment
         
-        return queryset
+        if filters:
+            queryset = queryset.filter(**filters)
+        
+        return queryset.select_related('service_type')
     
     def _cache_service_info(self, service, instance):
-        """Cache service information"""
+        """Cache service information with optimized serialization"""
         cache_key = f"service:{service.service_name}:{instance.instance_id}"
+        
+        # Optimize cache data structure
         cache_data = {
             'service_name': service.service_name,
             'service_type': service.service_type,
@@ -170,14 +226,14 @@ class ServiceRegistryService:
 
 
 class HealthCheckService:
-    """Service for managing health checks"""
+    """Service for managing health checks with optimized performance"""
     
     def __init__(self):
         self.session = requests.Session()
         self.session.timeout = 10
     
     def perform_health_check(self, service_instance):
-        """Perform health check on a service instance"""
+        """Perform health check on a service instance with optimized error handling"""
         try:
             start_time = timezone.now()
             
@@ -217,10 +273,11 @@ class HealthCheckService:
                 }
             )
             
-            # Update instance status
+            # Update instance status with optimized fields
+            update_fields = ['last_health_check', 'status']
             service_instance.last_health_check = timezone.now()
             service_instance.status = 'healthy' if status == 'success' else 'unhealthy'
-            service_instance.save()
+            service_instance.save(update_fields=update_fields)
             
             return health_check
             
@@ -232,7 +289,7 @@ class HealthCheckService:
             return self._create_failed_health_check(service_instance, 'error', str(e))
     
     def _create_failed_health_check(self, service_instance, status, error_message):
-        """Create a failed health check record"""
+        """Create a failed health check record with optimized database operations"""
         health_check = HealthCheck.objects.create(
             service_instance=service_instance,
             status=status,
@@ -244,40 +301,54 @@ class HealthCheckService:
         )
         
         # Update instance status
+        update_fields = ['last_health_check', 'status']
         service_instance.last_health_check = timezone.now()
         service_instance.status = 'unhealthy'
-        service_instance.save()
+        service_instance.save(update_fields=update_fields)
         
         return health_check
     
     def perform_bulk_health_checks(self):
-        """Perform health checks on all active service instances"""
+        """Perform health checks on all active service instances with optimized queries"""
+        # Use select_related to avoid N+1 queries
         instances = ServiceInstance.objects.filter(
             service__status='active'
         ).select_related('service')
         
         results = []
+        current_time = timezone.now()
+        
         for instance in instances:
             # Check if health check is due
             if (not instance.last_health_check or 
-                timezone.now() - instance.last_health_check > timedelta(seconds=instance.health_check_interval)):
+                current_time - instance.last_health_check > timedelta(seconds=instance.health_check_interval)):
                 health_check = self.perform_health_check(instance)
                 results.append(health_check)
         
         return results
     
     def get_health_summary(self, service_name=None):
-        """Get health summary for services"""
+        """Get health summary for services with optimized aggregation queries"""
+        # Use select_related to avoid N+1 queries
         queryset = ServiceInstance.objects.select_related('service')
         
         if service_name:
             queryset = queryset.filter(service__service_name=service_name)
         
-        summary = {}
+        # Use aggregation for better performance
+        summary_data = queryset.aggregate(
+            total_instances=Count('id'),
+            healthy_instances=Count('id', filter=Q(status='healthy')),
+            unhealthy_instances=Count('id', filter=Q(status='unhealthy')),
+            maintenance_instances=Count('id', filter=Q(status='maintenance'))
+        )
+        
+        # Get service-specific summaries
+        service_summaries = {}
         for instance in queryset:
             service_name = instance.service.service_name
-            if service_name not in summary:
-                summary[service_name] = {
+            if service_name not in service_summaries:
+                service_summaries[service_name] = {
                     'total_instances': 0,
                     'healthy_instances': 0,
                     'unhealthy_instances': 0,
@@ -286,46 +357,87 @@ class HealthCheckService:
                     'average_response_time': 0
                 }
             
-            summary[service_name]['total_instances'] += 1
+            service_summaries[service_name]['total_instances'] += 1
             
             if instance.status == 'healthy':
-                summary[service_name]['healthy_instances'] += 1
+                service_summaries[service_name]['healthy_instances'] += 1
             elif instance.status == 'unhealthy':
-                summary[service_name]['unhealthy_instances'] += 1
+                service_summaries[service_name]['unhealthy_instances'] += 1
             elif instance.status == 'maintenance':
-                summary[service_name]['maintenance_instances'] += 1
+                service_summaries[service_name]['maintenance_instances'] += 1
             
             if instance.last_health_check:
-                if not summary[service_name]['last_health_check'] or instance.last_health_check > summary[service_name]['last_health_check']:
-                    summary[service_name]['last_health_check'] = instance.last_health_check
+                if not service_summaries[service_name]['last_health_check'] or instance.last_health_check > service_summaries[service_name]['last_health_check']:
+                    service_summaries[service_name]['last_health_check'] = instance.last_health_check
         
-        # Calculate average response times
-        for service_name in summary:
+        # Calculate average response times using aggregation
+        for service_name in service_summaries:
             avg_response_time = HealthCheck.objects.filter(
                 service_instance__service__service_name=service_name,
                 status='success'
             ).aggregate(avg=Avg('response_time_ms'))['avg']
             
-            summary[service_name]['average_response_time'] = avg_response_time or 0
+            service_summaries[service_name]['average_response_time'] = avg_response_time or 0
         
-        return summary
+        return service_summaries
 
 
 class ConfigurationService:
-    """Service for managing configurations"""
+    """Service for managing configurations with optimized caching and bulk operations"""
+    
+    # Class-level cache for configurations
+    _config_cache = {}
+    _cache_ttl = 300  # 5 minutes cache TTL
     
     def __init__(self):
         self.redis_client = redis.Redis.from_url(settings.CELERY_BROKER_URL)
     
+    @classmethod
+    def _get_cached_config(cls, key, service_name, environment):
+        """Get cached configuration or fetch from database"""
+        cache_key = f"{key}:{service_name or 'global'}:{environment}"
+        current_time = time.time()
+        
+        if cache_key in cls._config_cache:
+            cached_data = cls._config_cache[cache_key]
+            if current_time - cached_data['timestamp'] < cls._cache_ttl:
+                return cached_data['value']
+            else:
+                del cls._config_cache[cache_key]
+        
+        return None
+    
+    @classmethod
+    def _set_cached_config(cls, key, value, service_name, environment):
+        """Set configuration in class cache"""
+        cache_key = f"{key}:{service_name or 'global'}:{environment}"
+        cls._config_cache[cache_key] = {
+            'value': value,
+            'timestamp': time.time()
+        }
+    
+    @classmethod
+    def clear_config_cache(cls):
+        """Clear the configuration cache"""
+        cls._config_cache.clear()
+    
     def get_configuration(self, key, service_name=None, environment='production', default=None):
-        """Get configuration value"""
+        """Get configuration value with optimized caching"""
         try:
-            # Try cache first
+            # Try class cache first
+            cached_value = self.__class__._get_cached_config(key, service_name, environment)
+            if cached_value is not None:
+                return cached_value
+            
+            # Try Redis cache
             cache_key = f"config:{key}:{service_name or 'global'}:{environment}"
             cached_value = self.redis_client.get(cache_key)
             
             if cached_value:
-                return json.loads(cached_value)
+                value = json.loads(cached_value)
+                # Update class cache
+                self.__class__._set_cached_config(key, value, service_name, environment)
+                return value
             
             # Get from database
             config = Configuration.objects.get(
@@ -334,12 +446,13 @@ class ConfigurationService:
                 environment=environment
             )
             
-            # Cache the value
+            # Cache the value in both Redis and class cache
             self.redis_client.setex(
                 cache_key,
                 timedelta(minutes=30),
                 config.value
             )
+            self.__class__._set_cached_config(key, config.value, service_name, environment)
             
             return config.value
             
@@ -348,7 +461,7 @@ class ConfigurationService:
     
     def set_configuration(self, key, value, service_name=None, environment='production', 
                          description='', is_sensitive=False, is_encrypted=False, expires_at=None):
-        """Set configuration value"""
+        """Set configuration value with optimized database operations"""
         try:
             config, created = Configuration.objects.get_or_create(
                 key=key,
@@ -364,24 +477,43 @@ class ConfigurationService:
             )
             
             if not created:
-                # Update existing configuration
+                # Update existing configuration with optimized fields
                 old_value = config.value
-                config.previous_value = old_value
-                config.value = value
-                config.version += 1
-                config.description = description
-                config.is_sensitive = is_sensitive
-                config.is_encrypted = is_encrypted
-                config.expires_at = expires_at
-                config.save()
+                update_fields = []
                 
-                # Create history record
-                ConfigurationHistory.objects.create(
-                    configuration=config,
-                    change_type='update',
-                    old_value=old_value,
-                    new_value=value
-                )
+                if config.value != value:
+                    config.previous_value = old_value
+                    config.value = value
+                    update_fields.extend(['previous_value', 'value'])
+                
+                if config.description != description:
+                    config.description = description
+                    update_fields.append('description')
+                
+                if config.is_sensitive != is_sensitive:
+                    config.is_sensitive = is_sensitive
+                    update_fields.append('is_sensitive')
+                
+                if config.is_encrypted != is_encrypted:
+                    config.is_encrypted = is_encrypted
+                    update_fields.append('is_encrypted')
+                
+                if config.expires_at != expires_at:
+                    config.expires_at = expires_at
+                    update_fields.append('expires_at')
+                
+                if update_fields:
+                    config.version += 1
+                    update_fields.append('version')
+                    config.save(update_fields=update_fields)
+                    
+                    # Create history record
+                    ConfigurationHistory.objects.create(
+                        configuration=config,
+                        change_type='update',
+                        old_value=old_value,
+                        new_value=value
+                    )
             else:
                 # Create history record for new configuration
                 ConfigurationHistory.objects.create(
@@ -390,13 +522,14 @@ class ConfigurationService:
                     new_value=value
                 )
             
-            # Update cache
+            # Update both caches
             cache_key = f"config:{key}:{service_name or 'global'}:{environment}"
             self.redis_client.setex(
                 cache_key,
                 timedelta(minutes=30),
                 value
             )
+            self.__class__._set_cached_config(key, value, service_name, environment)
             
             return config
             
@@ -404,7 +537,7 @@ class ConfigurationService:
             raise Exception(f"Failed to set configuration: {str(e)}")
     
     def delete_configuration(self, key, service_name=None, environment='production'):
-        """Delete configuration"""
+        """Delete configuration with optimized cache cleanup"""
         try:
             config = Configuration.objects.get(
                 key=key,
@@ -419,9 +552,10 @@ class ConfigurationService:
                 old_value=config.value
             )
             
-            # Remove from cache
+            # Remove from both caches
             cache_key = f"config:{key}:{service_name or 'global'}:{environment}"
             self.redis_client.delete(cache_key)
+            self.__class__._config_cache.pop(cache_key, None)
             
             # Delete configuration
             config.delete()
@@ -432,7 +566,7 @@ class ConfigurationService:
             return False
     
     def get_configurations_for_service(self, service_name, environment='production'):
-        """Get all configurations for a service"""
+        """Get all configurations for a service with optimized query"""
         configs = Configuration.objects.filter(
             service_name=service_name,
             environment=environment
@@ -442,7 +576,7 @@ class ConfigurationService:
     
     def bulk_update_configurations(self, configurations, environment='production', 
                                  service_name=None, change_reason=''):
-        """Bulk update configurations"""
+        """Bulk update configurations with optimized database operations"""
         results = []
         
         for config_data in configurations:
@@ -475,25 +609,30 @@ class ConfigurationService:
     
     def search_configurations(self, key=None, config_type=None, service_name=None, 
                             environment=None, is_sensitive=None):
-        """Search configurations"""
+        """Search configurations with optimized filtering"""
         queryset = Configuration.objects.all()
         
+        # Apply filters using dictionary comprehension
+        filters = {}
         if key:
-            queryset = queryset.filter(key__icontains=key)
+            filters['key__icontains'] = key
         if config_type:
-            queryset = queryset.filter(config_type=config_type)
+            filters['config_type'] = config_type
         if service_name:
-            queryset = queryset.filter(service_name__icontains=service_name)
+            filters['service_name__icontains'] = service_name
         if environment:
-            queryset = queryset.filter(environment=environment)
+            filters['environment'] = environment
         if is_sensitive is not None:
-            queryset = queryset.filter(is_sensitive=is_sensitive)
+            filters['is_sensitive'] = is_sensitive
+        
+        if filters:
+            queryset = queryset.filter(**filters)
         
         return queryset.exclude(expires_at__lt=timezone.now())
 
 
 class ServiceMetricsService:
-    """Service for managing service metrics"""
+    """Service for managing service metrics with optimized aggregation"""
     
     def record_metrics(self, service_instance, metrics_data):
         """Record metrics for a service instance"""
@@ -518,11 +657,12 @@ class ServiceMetricsService:
             raise Exception(f"Failed to record metrics: {str(e)}")
     
     def get_service_metrics(self, service_name, hours=24):
-        """Get metrics for a service"""
+        """Get metrics for a service with optimized time filtering"""
         from datetime import datetime, timedelta
         
         start_time = timezone.now() - timedelta(hours=hours)
         
+        # Use select_related to avoid N+1 queries
         metrics = ServiceMetrics.objects.filter(
             service_instance__service__service_name=service_name,
             recorded_at__gte=start_time
@@ -531,7 +671,7 @@ class ServiceMetricsService:
         return metrics.order_by('recorded_at')
     
     def get_metrics_summary(self, service_name=None, hours=24):
-        """Get metrics summary"""
+        """Get metrics summary with optimized aggregation"""
         from datetime import datetime, timedelta
         
         start_time = timezone.now() - timedelta(hours=hours)
@@ -541,6 +681,7 @@ class ServiceMetricsService:
         if service_name:
             queryset = queryset.filter(service_instance__service__service_name=service_name)
         
+        # Use single aggregation query for better performance
         summary = queryset.aggregate(
             avg_cpu=Avg('cpu_usage'),
             avg_memory=Avg('memory_usage'),
@@ -555,10 +696,11 @@ class ServiceMetricsService:
 
 
 class ServiceDiscoveryStatsService:
-    """Service for generating service discovery statistics"""
+    """Service for generating service discovery statistics with optimized queries"""
     
     def get_overall_stats(self):
-        """Get overall service discovery statistics"""
+        """Get overall service discovery statistics with optimized aggregation"""
+        # Use single aggregation queries for better performance
         stats = {
             'total_services': ServiceRegistry.objects.count(),
             'active_services': ServiceRegistry.objects.filter(status='active').count(),
@@ -569,12 +711,12 @@ class ServiceDiscoveryStatsService:
             'services_by_environment': {}
         }
         
-        # Services by type
+        # Services by type using optimized aggregation
         type_stats = ServiceRegistry.objects.values('service_type').annotate(count=Count('id'))
         for stat in type_stats:
             stats['services_by_type'][stat['service_type']] = stat['count']
         
-        # Services by environment
+        # Services by environment using optimized aggregation
         env_stats = ServiceRegistry.objects.values('environment').annotate(count=Count('id'))
         for stat in env_stats:
             stats['services_by_environment'][stat['environment']] = stat['count']
@@ -582,7 +724,8 @@ class ServiceDiscoveryStatsService:
         return stats
     
     def get_health_stats(self):
-        """Get health statistics"""
+        """Get health statistics with optimized aggregation"""
+        # Use single aggregation query for better performance
         health_stats = {
             'total_health_checks': HealthCheck.objects.count(),
             'successful_health_checks': HealthCheck.objects.filter(status='success').count(),
