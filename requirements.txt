@@ -4,7 +4,7 @@ djangorestframework==3.16.1
 django-filter==25.1
 
 # Async Processing
-celery==5.3.6
+celery==5.5.3
 redis==5.0.1
 
 # Database
