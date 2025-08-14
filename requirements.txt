@@ -32,7 +32,7 @@ channels-redis==4.1.0
 
 # Security
 djangorestframework-simplejwt==5.2.2
-python-keycloak==2.15.0
+python-keycloak==5.7.0
 
 # Testing
 locust==2.15.1
