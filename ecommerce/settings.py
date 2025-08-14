@@ -71,13 +71,80 @@ TEMPLATES = [
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'ecommerce',
+        'NAME': 'ecommerce_core',
+        'USER': 'admin',
+        'PASSWORD': 'securepass123',
+        'HOST': 'postgres-service',
+        'PORT': '5432'
+    },
+    'audit': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'ecommerce_audit',
+        'USER': 'admin',
+        'PASSWORD': 'securepass123',
+        'HOST': 'postgres-service',
+        'PORT': '5432'
+    },
+    'inventory': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'ecommerce_inventory',
+        'USER': 'admin',
+        'PASSWORD': 'securepass123',
+        'HOST': 'postgres-service',
+        'PORT': '5432'
+    },
+    'orders': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'ecommerce_orders',
+        'USER': 'admin',
+        'PASSWORD': 'securepass123',
+        'HOST': 'postgres-service',
+        'PORT': '5432'
+    },
+    'payments': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'ecommerce_payments',
+        'USER': 'admin',
+        'PASSWORD': 'securepass123',
+        'HOST': 'postgres-service',
+        'PORT': '5432'
+    },
+    'notifications': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'ecommerce_notifications',
+        'USER': 'admin',
+        'PASSWORD': 'securepass123',
+        'HOST': 'postgres-service',
+        'PORT': '5432'
+    },
+    'events': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'ecommerce_events',
+        'USER': 'admin',
+        'PASSWORD': 'securepass123',
+        'HOST': 'postgres-service',
+        'PORT': '5432'
+    },
+    'service_discovery': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'ecommerce_service_discovery',
+        'USER': 'admin',
+        'PASSWORD': 'securepass123',
+        'HOST': 'postgres-service',
+        'PORT': '5432'
+    },
+    'authentication': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'ecommerce_auth',
         'USER': 'admin',
         'PASSWORD': 'securepass123',
         'HOST': 'postgres-service',
         'PORT': '5432'
     }
 }
+
+# Database routing configuration
+DATABASE_ROUTERS = ['ecommerce.routers.DatabaseRouter']
 
 CACHES = {
     'default': {

@@ -1,0 +1,295 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-distributed-config
+  namespace: ecommerce
+data:
+  # Core database
+  POSTGRES_DB_CORE: ecommerce_core
+  POSTGRES_USER: admin
+  POSTGRES_PASSWORD: securepass123
+  
+  # Microservice databases
+  POSTGRES_DB_AUDIT: ecommerce_audit
+  POSTGRES_DB_INVENTORY: ecommerce_inventory
+  POSTGRES_DB_ORDERS: ecommerce_orders
+  POSTGRES_DB_PAYMENTS: ecommerce_payments
+  POSTGRES_DB_NOTIFICATIONS: ecommerce_notifications
+  POSTGRES_DB_EVENTS: ecommerce_events
+  POSTGRES_DB_SERVICE_DISCOVERY: ecommerce_service_discovery
+  POSTGRES_DB_AUTH: ecommerce_auth
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-core-pvc
+  namespace: ecommerce
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-audit-pvc
+  namespace: ecommerce
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-inventory-pvc
+  namespace: ecommerce
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-orders-pvc
+  namespace: ecommerce
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-payments-pvc
+  namespace: ecommerce
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-notifications-pvc
+  namespace: ecommerce
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-events-pvc
+  namespace: ecommerce
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-service-discovery-pvc
+  namespace: ecommerce
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-auth-pvc
+  namespace: ecommerce
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: standard
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-distributed
+  namespace: ecommerce
+  labels:
+    app: postgres-distributed
+    tier: database
+spec:
+  serviceName: postgres-distributed
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-distributed
+  template:
+    metadata:
+      labels:
+        app: postgres-distributed
+        tier: database
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15
+        ports:
+        - containerPort: 5432
+        envFrom:
+        - configMapRef:
+            name: postgres-distributed-config
+        env:
+        - name: POSTGRES_MULTIPLE_DATABASES
+          value: "ecommerce_core,ecommerce_audit,ecommerce_inventory,ecommerce_orders,ecommerce_payments,ecommerce_notifications,ecommerce_events,ecommerce_service_discovery,ecommerce_auth"
+        volumeMounts:
+        - name: postgres-core-storage
+          mountPath: /var/lib/postgresql/data/core
+        - name: postgres-audit-storage
+          mountPath: /var/lib/postgresql/data/audit
+        - name: postgres-inventory-storage
+          mountPath: /var/lib/postgresql/data/inventory
+        - name: postgres-orders-storage
+          mountPath: /var/lib/postgresql/data/orders
+        - name: postgres-payments-storage
+          mountPath: /var/lib/postgresql/data/payments
+        - name: postgres-notifications-storage
+          mountPath: /var/lib/postgresql/data/notifications
+        - name: postgres-events-storage
+          mountPath: /var/lib/postgresql/data/events
+        - name: postgres-service-discovery-storage
+          mountPath: /var/lib/postgresql/data/service_discovery
+        - name: postgres-auth-storage
+          mountPath: /var/lib/postgresql/data/auth
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          exec:
+            command:
+              - pg_isready
+              - -U
+              - admin
+              - -d
+              - ecommerce_core
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        readinessProbe:
+          exec:
+            command:
+              - pg_isready
+              - -U
+              - admin
+              - -d
+              - ecommerce_core
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+      volumes:
+      - name: postgres-core-storage
+        persistentVolumeClaim:
+          claimName: postgres-core-pvc
+      - name: postgres-audit-storage
+        persistentVolumeClaim:
+          claimName: postgres-audit-pvc
+      - name: postgres-inventory-storage
+        persistentVolumeClaim:
+          claimName: postgres-inventory-pvc
+      - name: postgres-orders-storage
+        persistentVolumeClaim:
+          claimName: postgres-orders-pvc
+      - name: postgres-payments-storage
+        persistentVolumeClaim:
+          claimName: postgres-payments-pvc
+      - name: postgres-notifications-storage
+        persistentVolumeClaim:
+          claimName: postgres-notifications-pvc
+      - name: postgres-events-storage
+        persistentVolumeClaim:
+          claimName: postgres-events-pvc
+      - name: postgres-service-discovery-storage
+        persistentVolumeClaim:
+          claimName: postgres-service-discovery-pvc
+      - name: postgres-auth-storage
+        persistentVolumeClaim:
+          claimName: postgres-auth-pvc
+      - name: init-script
+        configMap:
+          name: postgres-init-script
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-script
+  namespace: ecommerce
+data:
+  init-multiple-databases.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Function to create database
+    create_database() {
+        local database=$1
+        echo "Creating database $database"
+        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB_CORE" <<-EOSQL
+            CREATE DATABASE $database;
+            GRANT ALL PRIVILEGES ON DATABASE $database TO $POSTGRES_USER;
+        EOSQL
+    }
+    
+    # Create all microservice databases
+    for db in ecommerce_audit ecommerce_inventory ecommerce_orders ecommerce_payments ecommerce_notifications ecommerce_events ecommerce_service_discovery ecommerce_auth; do
+        create_database $db
+    done
+    
+    echo "All databases created successfully"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-distributed-service
+  namespace: ecommerce
+  labels:
+    app: postgres-distributed
+spec:
+  selector:
+    app: postgres-distributed
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+  type: ClusterIP
