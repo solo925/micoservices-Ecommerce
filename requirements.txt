@@ -23,7 +23,7 @@ opentelemetry-instrumentation-psycopg2==0.42b0
 psutil==5.9.6
 
 # API Gateway
-graphene-django==3.1.5
+graphene-django==3.2.3
 requests==2.31.0
 
 # Real-time
