@@ -35,7 +35,7 @@ djangorestframework-simplejwt==5.2.2
 python-keycloak==5.7.0
 
 # Testing
-locust==2.15.1
+locust==2.34.0
 pytest==8.4.1
 pytest-django==4.8.0
 coverage==7.10.3
