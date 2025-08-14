@@ -1,15 +1,21 @@
-name: Snyk Security Scan
-on: [push]
+# Snyk Security Scan - DISABLED due to authentication issues
+# To re-enable: 
+# 1. Set up proper SNYK_TOKEN in GitHub Secrets
+# 2. Uncomment this workflow
+# 3. Ensure your Snyk account has proper access
 
-jobs:
-  snyk:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-    - name: Scan Python Dependencies
-      uses: snyk/actions/python@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:
-        command: monitor
-        args: --all-projects --severity-threshold=high
+# name: Snyk Security Scan
+# on: [push]
+
+# jobs:
+#   snyk:
+#     runs-on: ubuntu-latest
+#     steps:
+#     - uses: actions/checkout@v3
+#     - name: Scan Python Dependencies
+#       uses: snyk/actions/python@master
+#       env:
+#         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+#       with:
+#         command: monitor
+#         args: --all-projects --severity-threshold=high

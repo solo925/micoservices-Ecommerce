@@ -92,8 +92,8 @@ class ServiceInstance(models.Model):
     
     # Health check info
     last_health_check = models.DateTimeField(null=True, blank=True)
-    health_check_interval = models.IntegerField(default=30)  # seconds
-    health_check_timeout = models.IntegerField(default=5)    # seconds
+    health_check_interval = models.IntegerField(default=30)  
+    health_check_timeout = models.IntegerField(default=5)    
     
     # Instance metadata
     metadata = models.JSONField(default=dict, encoder=DjangoJSONEncoder)
@@ -175,7 +175,7 @@ class Configuration(models.Model):
     config_type = models.CharField(max_length=20, choices=CONFIG_TYPE_CHOICES, default='application')
     
     # Configuration scope
-    service_name = models.CharField(max_length=100, blank=True)  # Empty for global config
+    service_name = models.CharField(max_length=100, blank=True)
     environment = models.CharField(max_length=20, choices=ENVIRONMENT_CHOICES, default='production')
     
     # Configuration metadata
