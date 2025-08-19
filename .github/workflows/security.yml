@@ -12,10 +12,10 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Install Trivy
-      uses: aquasecurity/trivy-action@master
+    - name: Setup Trivy
+      uses: aquasecurity/setup-trivy@v1
       with:
-        version: 'latest'
+        trivy-version: 'latest'
     
     - name: Scan Python Dependencies
       run: |
