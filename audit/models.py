@@ -29,12 +29,12 @@ class AuditLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     level = models.CharField(max_length=10, choices=LOG_LEVEL, default='info')
     log_type = models.CharField(max_length=20, choices=LOG_TYPE)
-    service_name = models.CharField(max_length=50)  # e.g., 'products', 'orders', 'payments'
+    service_name = models.CharField(max_length=50)  
     user_id = models.UUIDField(null=True, blank=True)
     session_id = models.CharField(max_length=100, blank=True)
-    request_id = models.UUIDField(null=True, blank=True)  # For distributed tracing
-    trace_id = models.UUIDField(null=True, blank=True)  # For distributed tracing
-    span_id = models.UUIDField(null=True, blank=True)  # For distributed tracing
+    request_id = models.UUIDField(null=True, blank=True)  
+    trace_id = models.UUIDField(null=True, blank=True)  
+    span_id = models.UUIDField(null=True, blank=True)  
     
     # Request details
     ip_address = models.GenericIPAddressField(null=True, blank=True)
@@ -52,8 +52,8 @@ class AuditLog(models.Model):
     response_body = models.TextField(blank=True)
     
     # Action details
-    action = models.CharField(max_length=100, blank=True)  # e.g., 'create', 'update', 'delete'
-    resource_type = models.CharField(max_length=50, blank=True)  # e.g., 'Product', 'Order'
+    action = models.CharField(max_length=100, blank=True)  
+    resource_type = models.CharField(max_length=50, blank=True)  
     resource_id = models.UUIDField(null=True, blank=True)
     
     # Content type for generic relations
@@ -129,7 +129,7 @@ class SecurityEvent(models.Model):
     metadata = models.JSONField(default=dict, blank=True)
     
     # Risk assessment
-    risk_score = models.IntegerField(default=0)  # 0-100
+    risk_score = models.IntegerField(default=0)
     risk_factors = models.JSONField(default=list, blank=True)
     
     # Response tracking
@@ -172,7 +172,7 @@ class PerformanceMetric(models.Model):
     metric_type = models.CharField(max_length=20, choices=METRIC_TYPE)
     metric_name = models.CharField(max_length=100)
     value = models.FloatField()
-    unit = models.CharField(max_length=20, blank=True)  # e.g., 'ms', 'req/s', '%'
+    unit = models.CharField(max_length=20, blank=True)  
     
     # Context
     endpoint = models.CharField(max_length=200, blank=True)
@@ -308,7 +308,7 @@ class APIAuditLog(models.Model):
     cache_hits = models.IntegerField(default=0)
     cache_misses = models.IntegerField(default=0)
     
-    # Additional context
+    # Metadata
     metadata = models.JSONField(default=dict, blank=True)
     
     class Meta:
@@ -335,7 +335,7 @@ class DistributedTrace(models.Model):
     )
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    trace_id = models.UUIDField(unique=True)  # Global trace ID
+    trace_id = models.UUIDField(unique=True) 
     parent_span_id = models.UUIDField(null=True, blank=True)
     span_id = models.UUIDField(unique=True)
     
@@ -385,7 +385,7 @@ class AuditConfiguration(models.Model):
     # Logging settings
     enabled = models.BooleanField(default=True)
     log_level = models.CharField(max_length=10, choices=AuditLog.LOG_LEVEL, default='info')
-    log_types = models.JSONField(default=list)  # List of log types to capture
+    log_types = models.JSONField(default=list) 
     
     # Retention settings
     retention_days = models.IntegerField(default=90)
@@ -397,9 +397,9 @@ class AuditConfiguration(models.Model):
     flush_interval_seconds = models.IntegerField(default=60)
     
     # Security settings
-    mask_sensitive_fields = models.JSONField(default=list)  # Fields to mask in logs
-    exclude_paths = models.JSONField(default=list)  # Paths to exclude from logging
-    exclude_methods = models.JSONField(default=list)  # HTTP methods to exclude
+    mask_sensitive_fields = models.JSONField(default=list) 
+    exclude_paths = models.JSONField(default=list)  
+    exclude_methods = models.JSONField(default=list)  
     
     # Notification settings
     alert_on_errors = models.BooleanField(default=True)

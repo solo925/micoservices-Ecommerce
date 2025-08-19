@@ -169,7 +169,7 @@ class StockReservationCreateSerializer(serializers.Serializer):
     quantity = serializers.IntegerField(min_value=1)
     reference_type = serializers.CharField(max_length=50, default='order')
     reference_id = serializers.UUIDField()
-    expires_in_minutes = serializers.IntegerField(default=30, min_value=1, max_value=1440)  # Max 24 hours
+    expires_in_minutes = serializers.IntegerField(default=30, min_value=1, max_value=1440) 
     
     def validate(self, attrs):
         inventory_item_id = attrs['inventory_item_id']

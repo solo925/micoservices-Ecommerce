@@ -33,7 +33,7 @@ class NotificationService:
     # Class-level cache for templates and preferences
     _template_cache = {}
     _preference_cache = {}
-    _cache_ttl = 300  # 5 minutes
+    _cache_ttl = 300  
     
     @classmethod
     def _get_cached_template(cls, template_id: int) -> Optional[NotificationTemplate]:
@@ -426,7 +426,7 @@ class NotificationStatsService:
     
     # Cache for statistics
     _stats_cache = {}
-    _cache_ttl = 300  # 5 minutes
+    _cache_ttl = 300  
     
     @classmethod
     def get_notification_stats(

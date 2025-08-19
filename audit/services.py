@@ -17,7 +17,7 @@ class AuditService:
     
     # Class-level cache for configurations to avoid repeated DB queries
     _config_cache = {}
-    _cache_ttl = 300  # 5 minutes cache TTL
+    _cache_ttl = 300 
     
     @classmethod
     def _get_cached_config(cls, service_name):
@@ -155,7 +155,7 @@ class AuditService:
                 config = AuditService._get_cached_config(service_name)
                 
                 if not config:
-                    continue  # Skip events for disabled services
+                    continue 
                 
                 # Apply configuration checks
                 level = event_data.get('level', 'info')
@@ -163,7 +163,7 @@ class AuditService:
                 
                 if (config.log_level == 'error' and level not in ['error', 'critical']) or \
                    (config.log_types and log_type not in config.log_types):
-                    continue  # Skip events that don't meet criteria
+                    continue 
                 
                 # Mask sensitive data if needed
                 if config.mask_sensitive_fields:

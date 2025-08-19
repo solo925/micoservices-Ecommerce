@@ -186,7 +186,7 @@ def send_digest_notifications_task():
                     # Create digest notification
                     digest_content = "Here's a summary of your recent notifications:\n\n"
                     
-                    for notification in pending_notifications[:10]:  # Limit to 10 notifications
+                    for notification in pending_notifications[:10]: 
                         digest_content += f"• {notification.subject}\n"
                     
                     # Create digest notification

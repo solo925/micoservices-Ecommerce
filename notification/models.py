@@ -17,10 +17,10 @@ class NotificationTemplate(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True)
     template_type = models.CharField(max_length=20, choices=TEMPLATE_TYPE)
-    subject = models.CharField(max_length=255, blank=True)  # For email
-    content = models.TextField()  # Template content with placeholders
-    html_content = models.TextField(blank=True)  # HTML version for email
-    variables = models.JSONField(default=dict, blank=True)  # Available variables
+    subject = models.CharField(max_length=255, blank=True) 
+    content = models.TextField() 
+    html_content = models.TextField(blank=True) 
+    variables = models.JSONField(default=dict, blank=True) 
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -123,7 +123,7 @@ class Notification(models.Model):
     # Metadata
     priority = models.CharField(max_length=10, choices=PRIORITY_LEVEL, default='normal')
     metadata = models.JSONField(default=dict, blank=True)
-    context_data = models.JSONField(default=dict, blank=True)  # Template variables
+    context_data = models.JSONField(default=dict, blank=True) 
     
     # Status tracking
     is_sent = models.BooleanField(default=False)

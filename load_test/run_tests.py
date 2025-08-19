@@ -98,7 +98,7 @@ class LoadTestRunner:
             "-f", "comprehensive_load_test.py",
             "--host", self.host,
             "--users", str(users),
-            "--spawn-rate", str(users),  # Spawn all users at once
+            "--spawn-rate", str(users),  
             "--run-time", f"{duration}s",
             "--headless",
             "--print-stats",
@@ -148,7 +148,7 @@ if __name__ == "__main__":
             "-f", "black_friday_test.py",
             "--host", self.host,
             "--users", str(users),
-            "--spawn-rate", str(users // 5),  # Ramp up over time
+            "--spawn-rate", str(users // 5), 
             "--run-time", f"{duration}s",
             "--headless",
             "--print-stats",

@@ -218,7 +218,7 @@ class CircuitBreaker:
                 'failure_count': self.failure_count,
                 'last_failure_time': self.last_failure_time.isoformat() if self.last_failure_time else None
             }
-            self.redis_client.setex(key, 300, json.dumps(data))  # 5 minute TTL
+            self.redis_client.setex(key, 300, json.dumps(data))  
         except Exception as e:
             logger.error(f"Error updating circuit breaker state: {e}")
 
@@ -230,7 +230,7 @@ class LoadBalancerMiddleware:
         self.get_response = get_response
         self.service_instances = {}
         self.last_discovery_time = {}
-        self.discovery_interval = 30  # seconds
+        self.discovery_interval = 30 
         
     def __call__(self, request):
         return self.get_response(request)
@@ -251,7 +251,7 @@ class LoadBalancerMiddleware:
         elif algorithm == 'random':
             return random.choice(instances)
         else:
-            return instances[0]  # Default to first instance
+            return instances[0]  
     
     def _get_healthy_instances(self, service_name):
         """Get healthy service instances from service discovery"""
@@ -280,7 +280,7 @@ class LoadBalancerMiddleware:
                     'port': instance.port,
                     'protocol': instance.protocol,
                     'weight': instance.load_balancer_weight,
-                    'connections': 0  # Track active connections
+                    'connections': 0  
                 }
                 for instance in instances
             ]
@@ -308,7 +308,7 @@ class LoadBalancerMiddleware:
             if random_weight <= current_weight:
                 return instance
         
-        return instances[0]  # Fallback
+        return instances[0]  
     
     def _least_connections_select(self, service_name, instances):
         """Least connections load balancing"""

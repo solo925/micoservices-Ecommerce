@@ -15,7 +15,7 @@ class InventoryService:
     
     # Class-level cache for inventory statistics
     _stats_cache = {}
-    _cache_ttl = 300  # 5 minutes cache TTL
+    _cache_ttl = 300  
     
     @classmethod
     def _get_cached_stats(cls, warehouse_id):

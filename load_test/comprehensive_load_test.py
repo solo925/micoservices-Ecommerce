@@ -426,15 +426,15 @@ def on_test_stop(environment, **kwargs):
 class BlackFridayScenario(HttpUser):
     """Simulate Black Friday high-traffic scenario"""
     
-    wait_time = between(0.5, 2)  # Very fast interactions
-    weight = 5  # High traffic
+    wait_time = between(0.5, 2) 
+    weight = 5  
     
     @task(15)
     def flash_sale_browse(self):
         """Intensive browsing during flash sales"""
         # Rapid product browsing
         for _ in range(3):
-            product_id = random.randint(1, 20)  # Popular products
+            product_id = random.randint(1, 20)  
             self.client.get(f"/api/products/{product_id}/", name="Flash Sale Browse")
     
     @task(10)
@@ -447,7 +447,7 @@ class BlackFridayScenario(HttpUser):
         }, name="Quick Add to Cart")
         
         # Immediate checkout attempt
-        if random.random() < 0.3:  # 30% proceed to checkout
+        if random.random() < 0.3:  
             order_data = {
                 "order": {
                     "customer_name": f"Flash Customer {random.randint(1, 10000)}",

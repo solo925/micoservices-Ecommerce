@@ -107,13 +107,13 @@ class StockMovement(models.Model):
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     
     # References
-    reference_type = models.CharField(max_length=50, blank=True)  # 'order', 'purchase', 'transfer', etc.
+    reference_type = models.CharField(max_length=50, blank=True)  
     reference_id = models.UUIDField(null=True, blank=True, db_index=True)
     
     # Details
     reason = models.TextField(blank=True)
     notes = models.TextField(blank=True)
-    performed_by = models.UUIDField(null=True, blank=True, db_index=True)  # User ID
+    performed_by = models.UUIDField(null=True, blank=True, db_index=True)  
     
     # Snapshots for audit
     quantity_before = models.IntegerField()
@@ -150,8 +150,8 @@ class StockReservation(models.Model):
     
     # References
     reference_type = models.CharField(max_length=50, default='order')
-    reference_id = models.UUIDField(db_index=True)  # Order ID, Cart ID, etc.
-    reserved_by = models.UUIDField(db_index=True)  # User ID
+    reference_id = models.UUIDField(db_index=True)  
+    reserved_by = models.UUIDField(db_index=True)  
     
     # Timing
     reserved_at = models.DateTimeField(auto_now_add=True)
@@ -259,7 +259,7 @@ class InventoryAudit(models.Model):
     status = models.CharField(max_length=20, choices=AUDIT_STATUS, default='PLANNED')
     
     # Audit details
-    audited_by = models.UUIDField(db_index=True)  # User ID
+    audited_by = models.UUIDField(db_index=True)  
     notes = models.TextField(blank=True)
     total_items_audited = models.IntegerField(default=0)
     discrepancies_found = models.IntegerField(default=0)
@@ -288,7 +288,7 @@ class InventoryAuditItem(models.Model):
     # Audit results
     system_quantity = models.IntegerField()
     physical_quantity = models.IntegerField()
-    discrepancy = models.IntegerField()  # physical - system
+    discrepancy = models.IntegerField() 
     
     notes = models.TextField(blank=True)
     audited_at = models.DateTimeField(auto_now_add=True)
