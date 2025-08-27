@@ -24,7 +24,7 @@ psutil==7.0.0
 
 # API Gateway
 graphene-django==3.2.3
-requests==2.32.4
+requests==2.32.5
 
 # Real-time
 channels==4.3.1
