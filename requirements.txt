@@ -37,7 +37,7 @@ python-keycloak==5.7.0
 # Testing
 locust==2.34.0
 pytest==8.4.1
-pytest-django==4.8.0
+pytest-django==4.11.1
 coverage==7.10.5
 
 # Dev Tools
