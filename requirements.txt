@@ -41,5 +41,5 @@ pytest-django==4.11.1
 coverage==7.10.7
 
 # Dev Tools
-ipython==8.18.1
+ipython==9.6.0
 sentry-sdk==2.41.0
