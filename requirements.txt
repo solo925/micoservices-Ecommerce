@@ -20,7 +20,7 @@ opentelemetry-exporter-jaeger==1.21.0
 opentelemetry-instrumentation-django==0.58b0
 opentelemetry-instrumentation-requests==0.58b0
 opentelemetry-instrumentation-psycopg2==0.57b0
-psutil==7.1.0
+psutil==7.1.1
 
 # API Gateway
 graphene-django==3.2.3
