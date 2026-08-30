@@ -1,5 +1,5 @@
 # Core
-Django==4.2.23
+Django==4.2.25
 djangorestframework==3.16.1
 django-filter==25.2
 
